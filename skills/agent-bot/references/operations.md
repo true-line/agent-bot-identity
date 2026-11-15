@@ -441,3 +441,25 @@ remote SOP commit, or run `agent-bot workflow sync` to cache the remote SOP
 commit locally.
 
 - `gh issue create --parent` for an issue in another repository fails for GitHub Apps with `Resource not accessible by integration (addSubIssue)` — a GitHub Apps limitation, not a shim bug. The hosted `agents.true-line.ai` MCP has no `bind` tool; binding a session is only on the local `agent-bot mcp`.
+
+
+## Notice operations and migration status
+
+`agent-bot notices peek --count 1 --json` is a read-only server queue query.
+`agent-bot notices take --count 1 --json` leases a notice remotely; keep the
+returned lease and use `agent-bot notices ack <lease>` only after handling it,
+or `agent-bot notices release <lease>` to make it available again. These
+mutating commands are remote-write operations. A stale lease is reported;
+it does not authorize deleting a replacement lease. Inspect refusals before
+retrying, and never substitute a different bot identity or device key.
+
+The installed legacy `take_inbox` MCP tool still uses the existing daemon
+path. The client-only HQ adapter prepared under PDR-0062 is not connected to
+that tool or these CLI commands yet. A working legacy command therefore does
+not prove HQ custody or scoped local consumption. The adapter requires a
+supported authenticated member-query transport and actual shared-contract
+release/pin before integration. Its consume-one request must never be
+silently replayed after a lost response, and an HQ failure must not trigger
+a direct remote-queue fallback. No client flag proves exclusive custody;
+owner-configured service policy and a dedicated HQ key establish the rollout
+boundary. Programs sharing that key remain indistinguishable.
