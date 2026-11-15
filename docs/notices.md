@@ -49,3 +49,32 @@ filters come from the caller.
 the bound worktree's repository, acks it immediately and returns it as
 `{ event }` (at-most-once). Without server mode it still pulls from the
 gh-app-hook Worker. New code should use `take_notices` + `ack_notices`.
+
+
+## HQ compatibility adapter preparation
+
+[Accepted PDR-0062](https://github.com/true-line/agent-bot-platform/blob/main/docs/04-decisions/PDR-0062-hq-notice-scope-and-legacy-consume-one.md)
+defines the future HQ-backed handoff. `identity/hq-inbox-client.mjs` prepares
+only its member-side adapter; the installed CLI and MCP paths above are
+unchanged. It is not a new daemon or remote queue implementation.
+
+An integration host must supply an already-bound `request(kind, payload)`, a
+`currentRuntime()` returning only `{installation_epoch, lease_generation}`,
+shared `validateQuery`/`validateResult` callbacks returning SDK error arrays,
+and the SDK `canonicalBytes`. The callbacks must use the supported verified
+contract release; missing validation refuses construction. `takeInbox()`
+takes no arguments or queue selectors. It sends `notices.consume-one` once,
+validates the response before legacy mapping, and propagates refusals or an
+unknown transport outcome without reconnecting, replaying or calling Harbor.
+The injected request implementation must likewise never automatically replay
+a destructive call. Shared payload/compatibility rules live in
+[soul-contracts](https://github.com/true-line/soul-contracts/blob/main/schemas/hq/v1/notices.md).
+
+The shared authenticated member-query transport, its no-replay policy, the
+actual release/pin and MCP wiring remain prerequisites tracked in
+[#1441](https://github.com/true-line/agent-bot-identity/issues/1441). The adapter
+has no credential, binding-proof, runtime-discovery or scope policy code.
+Existing standalone clients must not compete with a migrated queue; the
+owner's service custody gate and dedicated device key enforce that boundary.
+No standalone flag or SDK injection activates production custody. Overall
+alias parity remains open in [HQ #13](https://github.com/true-line/agent-bot-hq/issues/13).

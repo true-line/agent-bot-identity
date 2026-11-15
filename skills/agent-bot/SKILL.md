@@ -22,7 +22,8 @@ minted; never continue with an ambient human GitHub login.
 
 - Read [operations.md](references/operations.md) for fresh-machine bootstrap,
   installation, worktree setup, token minting, password/API-key retrieval,
-  diagnostics, or identity-repair requests. When every agent loses GitHub
+  diagnostics, notice operations and their migration status, or identity-repair
+  requests. When every agent loses GitHub
   access at once, after an upgrade or a daemon restart, follow its
   [recovery section](references/operations.md#recover-after-an-upgrade-or-a-daemon-restart).
   On a server-mode machine (`agent-bot server status` shows enrolled) token or

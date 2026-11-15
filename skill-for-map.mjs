@@ -17,6 +17,7 @@ export const SKILL_REFERENCES = Object.freeze({
   'setup-worktree': 'operations.md',
   'mint-token': 'operations.md',
   doctor: 'operations.md',
+  notices: 'operations.md',
   install: 'operations.md',
   'install-gh-shim': 'operations.md',
   'ensure-private-key': 'operations.md',
@@ -37,7 +38,7 @@ export const SKILL_REFERENCES = Object.freeze({
 // sandbox), docs/, or the command's own --help is the guidance; internal
 // commands are run by hooks and harness configs, not by an agent.
 export const NO_SKILL_REFERENCE = Object.freeze([
-  'join', 'principal', 'harness', 'broker', 'keyd', 'owner', 'machine', 'pair', 'unpair', 'approvals', 'audit', 'mcp', 'events', 'notices',
+  'join', 'principal', 'harness', 'broker', 'keyd', 'owner', 'machine', 'pair', 'unpair', 'approvals', 'audit', 'mcp', 'events',
   'reach-mcp', 'web', 'telegram', 'update', 'skill', 'sop', 'sandbox', 'metrics', 'diagnostics', 'server', 'cloud',
   'credential', 'worktree-token', 'gh-inbox-query', 'gh-pr-view-json',
   'claude-worktree-create', 'agent-hook', 'hook',
