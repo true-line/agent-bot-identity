@@ -1,7 +1,7 @@
 // Test dependencies only. Public source, exact immutable commits, no runtime
 // loader override, schema copies, credentials or moving-branch resolution.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // A fresh fetch must not read an operator's Git config or inherited config
@@ -18,10 +18,27 @@ export function publicGit(directory, args, { env = process.env } = {}) {
 export function pinnedComponent(name, commit) {
   const root = fileURLToPath(new URL('../../node_modules/.cache/hq-member-components/', import.meta.url));
   mkdirSync(root, { recursive: true }); const dir = join(root, `${name}-${commit}`);
-  const git = (...args) => publicGit(dir, args);
+  const verify = (directory) => {
+    if (publicGit(directory, ['rev-parse', 'HEAD']).toString().trim() !== commit
+      || publicGit(directory, ['status', '--porcelain', '--untracked-files=no']).toString().trim()) {
+      throw new Error(`test dependency ${name} is not the clean reviewed source`);
+    }
+  };
   if (!existsSync(dir)) {
-    mkdirSync(dir); git('init', '-q', '--template='); git('fetch', '-q', '--depth', '1', `https://github.com/true-line/${name}.git`, commit); git('checkout', '-q', 'FETCH_HEAD');
+    const stage = mkdtempSync(join(root, `.${name}-${commit}-`));
+    try {
+      publicGit(stage, ['init', '-q', '--template=']);
+      publicGit(stage, ['fetch', '-q', '--depth', '1', `https://github.com/true-line/${name}.git`, commit]);
+      publicGit(stage, ['checkout', '-q', 'FETCH_HEAD']);
+      verify(stage);
+      try { renameSync(stage, dir); }
+      catch (error) {
+        // Another process may publish a complete checkout first. Refuse any
+        // other rename failure; the winner is validated again below.
+        if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
+      }
+    } finally { rmSync(stage, { recursive: true, force: true }); }
   }
-  if (git('rev-parse', 'HEAD').toString().trim() !== commit || git('status', '--porcelain', '--untracked-files=no').toString().trim()) throw new Error(`test dependency ${name} is not the clean reviewed source`);
+  verify(dir);
   return dir;
 }
