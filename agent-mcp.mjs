@@ -26,7 +26,7 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { readBinding, readBindToken, resolveAgentSlug, serverUrl, loadDevice, createHqInboxBackend, hasHqMemberEnvironment } from './identity-host.mjs';
+import { readBinding, readBindToken, resolveAgentSlug, createHqInboxBackend, hasHqMemberEnvironment } from './identity-host.mjs';
 import { daemonClient } from './daemon-client.mjs';
 import { detectAgentHarness } from './detect-harness.mjs';
 import { SKILL_REFERENCES, skillReferenceFor } from './skill-for-map.mjs';
