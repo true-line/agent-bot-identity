@@ -425,6 +425,8 @@ stdout:
 usage: agent-bot mcp
 
 Run the agent-bot stdio JSON-RPC MCP server for the current worktree.
+With inherited Soul member inputs, take_inbox uses HQ only; incomplete inputs
+or an unavailable verified contract release refuse without legacy fallback.
 stderr:
 
 $ agent-bot mcp -h
@@ -437,6 +439,8 @@ stderr:
 agent-mcp: usage: agent-bot mcp
 
 Run the agent-bot stdio JSON-RPC MCP server for the current worktree.
+With inherited Soul member inputs, take_inbox uses HQ only; incomplete inputs
+or an unavailable verified contract release refuse without legacy fallback.
 
 $ agent-bot metrics --help
 exit: 0
