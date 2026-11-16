@@ -453,13 +453,26 @@ mutating commands are remote-write operations. A stale lease is reported;
 it does not authorize deleting a replacement lease. Inspect refusals before
 retrying, and never substitute a different bot identity or device key.
 
-The installed legacy `take_inbox` MCP tool still uses the existing daemon
-path. The client-only HQ adapter prepared under PDR-0062 is not connected to
-that tool or these CLI commands yet. A working legacy command therefore does
-not prove HQ custody or scoped local consumption. The adapter requires a
-supported authenticated member-query transport and actual shared-contract
-release/pin before integration. Its consume-one request must never be
-silently replayed after a lost response, and an HQ failure must not trigger
-a direct remote-queue fallback. No client flag proves exclusive custody;
-owner-configured service policy and a dedicated HQ key establish the rollout
-boundary. Programs sharing that key remain indistinguishable.
+In a Soul member process, the existing `agent-bot mcp` command selects the
+SDK-backed `take_inbox` path from inherited member inputs before any legacy
+inbox binding or client construction. Call `call_write_tool` with tool name
+`take_inbox` and arguments `{}`. Do not supply harness, repository, runtime,
+count or credential selectors. Other tool names remain available and keep
+their existing unmigrated binding requirements. Outside the member context,
+the existing standalone inbox path remains separate.
+
+The HQ path requires the pinned genuine `soul-contracts v0.5.0` offline
+directory. Missing or altered contract data refuses before SDK/legacy effects.
+An incomplete member environment or
+`inbox-contracts-unavailable` is a refusal, not a reason to unset member inputs
+or retry through a standalone queue. The existing configured MCP process must
+actually inherit the authenticated member environment; a generated
+`agent-reach`/`reach-mcp` entry is not the inbox server.
+
+Consume-one has no automatic retry. After an unknown transport outcome,
+inspect durable HQ handling before deciding on another call: a lost response
+may follow a committed local consume. An HQ failure never authorizes direct
+upstream fallback. No client flag proves exclusive custody; owner-configured
+service policy and a dedicated HQ key establish the rollout boundary.
+Programs sharing that key remain indistinguishable. See
+[the implementation and acceptance evidence](../../../docs/notices.md#dependency-and-acceptance-status).

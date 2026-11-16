@@ -26,7 +26,7 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { readBinding, readBindToken, resolveAgentSlug, serverUrl, loadDevice } from './identity-host.mjs';
+import { readBinding, readBindToken, resolveAgentSlug, createHqInboxBackend, hasHqMemberEnvironment } from './identity-host.mjs';
 import { daemonClient } from './daemon-client.mjs';
 import { detectAgentHarness } from './detect-harness.mjs';
 import { SKILL_REFERENCES, skillReferenceFor } from './skill-for-map.mjs';
@@ -178,15 +178,10 @@ const TOOLS = [
     class: 'write',
     handler: takeInbox,
     description:
-      'DEPRECATED: use take_notices + ack_notices. In server mode this takes one notice for the bound repository and acks it. Take the next subscribed GitHub notice (including mentions, review requests, '
-      + 'merges, reviews, issue changes and discussion changes) for the App and '
-      + 'repository this bound worktree is. The call returns the event and '
-      + 'marks it pulled (the record stays until its push deliveries settle '
-      + 'and the TTL expires). A returned event carries a `deliveries` array '
-      + 'with the per-subscriber push status (`pending`, `delivered`, or '
-      + '`dead`), so a consumer that also receives pushes can skip events '
-      + 'already delivered and watch for dead ones. The repository and App '
-      + 'come from the binding, not from the caller. Requires bind.',
+      'Deprecated compatibility alias: consume one notice and return its legacy event with pulled:true, or event:null. '
+      + 'With inherited Soul member inputs it uses HQ authenticated scoped durable custody only, with no upstream fallback. '
+      + 'Outside that context the existing standalone path uses the bound worktree App/repository and acknowledges its remote notice. '
+      + 'Caller selectors cannot grant scope. A lost consume response may follow a committed handoff; never automatically replay it.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -399,12 +394,20 @@ export function createMcpState({
   home = homedir(),
   cwd = process.cwd(),
   client = null,
+  legacyClientFactory = daemonClient,
 } = {}) {
+  const hqInbox = hasHqMemberEnvironment(env) ? createHqInboxBackend({ env }) : null;
+  let legacyClient = client;
   return {
     env,
     home,
     cwd,
-    client: client ?? daemonClient({ env, home, cwd }),
+    // Unmigrated tools keep their existing backend, constructed only when
+    // explicitly invoked. HQ take_inbox never reads this getter.
+    get client() { return legacyClient ??= legacyClientFactory({ env, home, cwd }); },
+    set client(value) { legacyClient = value; },
+    hqInbox,
+    close: () => hqInbox?.close(),
     // Held in memory for the life of this server process; never serialized.
     secret: null,
     agentId: null,
@@ -492,7 +495,13 @@ async function ensureTakeBinding(state) {
   }
 }
 
-async function takeInbox(state) {
+async function takeInbox(state, args = {}) {
+  if (state.hqInbox) {
+    if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) {
+      throw inboxError('inbox-bad-request', 'HQ inbox consume-one takes no caller selectors');
+    }
+    return state.hqInbox.takeInbox();
+  }
   const binding = await ensureTakeBinding(state);
   if (resolve(binding.worktree) !== resolve(state.cwd)) {
     throw inboxError(
@@ -709,8 +718,9 @@ export async function handleMcpMessage(state, message) {
             `agent-bot local MCP v${serverVersion()}. On a server-mode machine git/gh mint tokens `
             + 'through the credential helper and gh shim — never pass-cli or ensure-private-key. '
             + 'Use search_tools to find tools, describe_tool for a schema, call_tool for reads, '
-            + 'call_write_tool for writes. Start a conversation with call_write_tool bind '
-            + '(or `agent-bot join` first when no bind token exists). Ask guide for more.',
+            + 'call_write_tool for writes. '
+            + (state.hqInbox ? 'take_inbox uses inherited Soul member inputs and authenticates through the SDK; it does not use the legacy bind tool or fall back upstream. Other unmigrated tools keep their legacy binding requirements. ' : 'Start a conversation with call_write_tool bind (or `agent-bot join` first when no bind token exists). ')
+            + 'Ask guide for more.',
         }));
       case 'ping':
         return reply(rpcResult(id, {}));
@@ -780,21 +790,32 @@ export function runMcpServer({ state = createMcpState(), input = process.stdin, 
       if (response) output.write(`${JSON.stringify(response)}\n`);
     })();
     inFlight.add(task);
-    task.finally(() => inFlight.delete(task));
+    task.then(() => inFlight.delete(task), () => inFlight.delete(task));
   });
-  return new Promise((resolve) => {
-    lines.on('close', async () => {
-      while (inFlight.size > 0) {
-        await Promise.allSettled([...inFlight]);
-      }
-      resolve();
-    });
+  return new Promise((resolve, reject) => {
+    let ended = false;
+    const finish = async (error) => {
+      if (ended) return;
+      ended = true;
+      try {
+        await state.close?.();
+        while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+        if (error) reject(error); else resolve();
+      } catch (closeError) { reject(closeError); }
+      finally { input.off('error', failed); output.off('error', failed); }
+    };
+    const failed = (error) => { finish(error); lines.close(); };
+    lines.on('error', failed);
+    input.on('error', failed); output.on('error', failed);
+    lines.on('close', () => { finish(); });
   });
 }
 
 export const MCP_USAGE = `usage: agent-bot mcp
 
 Run the agent-bot stdio JSON-RPC MCP server for the current worktree.
+With inherited Soul member inputs, take_inbox uses HQ only; incomplete inputs
+or an unavailable verified contract release refuse without legacy fallback.
 `;
 
 export function parseMcpArgs(argv = []) {
@@ -814,9 +835,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (options.help) {
     process.stdout.write(MCP_USAGE);
   } else {
-    runMcpServer().catch((error) => {
+    const state = createMcpState();
+    const shutdown = () => { Promise.resolve(state.close?.()).finally(() => process.exit(0)); };
+    process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
+    runMcpServer({ state }).catch((error) => {
       process.stderr.write(`agent-mcp: ${error.message}\n`);
       process.exit(1);
-    });
+    }).finally(() => { process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown); });
   }
 }
