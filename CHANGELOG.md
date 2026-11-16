@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.20
+
+- `agent-bot server enroll` (and so `agent-bot cloud up`) saves a device grant while it waits for approval and resumes it on the next run instead of asking the server for a new code. A cloud container paused mid-wait used to lose the grant: an owner who then approved the code the session had shown approved a grant nothing polled any more, and the server creates the device only when the approved code is polled, so the next session asked for a fresh approval. The saved grant (`enroll-grant.json`, 0600) is resumed only for the same server, harnesses and device key while the code is still valid, and is dropped once the server denies, expires or redeems it; a forced re-enroll keeps its staged key for the resume.
+- Prepare a client-only HQ consume-one compatibility adapter with mandatory shared validation and no replay or remote fallback. Existing CLI/MCP wiring remains unchanged; the supported member transport and real contract release/pin remain prerequisites (#1441).
+
 ## 0.15.19
 
 - `agent-bot cloud install-hooks` no longer registers `cloud down --hook` as a Claude Code `SessionEnd` hook, and removes one an earlier install added. `SessionEnd` fires whenever a session ends, a pause or an idle stop included, not only when it is deleted, so it revoked the device on every pause and each resume needed a fresh approval. A paused container keeps its enrollment now; the device's lifetime, or `agent-bot cloud down` run by hand, retires it.

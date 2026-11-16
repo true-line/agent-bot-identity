@@ -1,1 +1,0 @@
-- Prepare a client-only HQ consume-one compatibility adapter with mandatory shared validation and no replay or remote fallback. Existing CLI/MCP wiring remains unchanged; the supported member transport and real contract release/pin remain prerequisites (#1441).
