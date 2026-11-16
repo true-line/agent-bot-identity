@@ -42,3 +42,5 @@ export { validateApprovalScope } from './session-approvals.mjs';
 export { loadOrCreateVouchKey, loadVouchKey, signSoulToken, vouchKeyPath, vouchPublicKeyPem, vouchStateDir } from './vouch.mjs';
 export { brokeredProviderEnv, dropProviderKey, ensureProviderKey, fetchProviderKey, heldProviderEnv, inferenceProxyOrigin, launchProviderEnv, pilotProviderCheck, providerKeyStale, providerKeyStatus, startInferenceProxy, stopInferenceProxy } from './provider-key.mjs';
 export { validProxyPort } from './inference-proxy.mjs';
+
+export { createHqInboxBackend, hasHqMemberEnvironment } from './hq-inbox-backend.mjs';

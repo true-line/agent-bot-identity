@@ -51,30 +51,70 @@ the bound worktree's repository, acks it immediately and returns it as
 gh-app-hook Worker. New code should use `take_notices` + `ack_notices`.
 
 
-## HQ compatibility adapter preparation
+## Existing MCP command with an HQ member context
 
 [Accepted PDR-0062](https://github.com/true-line/agent-bot-platform/blob/main/docs/04-decisions/PDR-0062-hq-notice-scope-and-legacy-consume-one.md)
-defines the future HQ-backed handoff. `identity/hq-inbox-client.mjs` prepares
-only its member-side adapter; the installed CLI and MCP paths above are
-unchanged. It is not a new daemon or remote queue implementation.
+defines the HQ-backed handoff. The existing `agent-bot mcp` command selects
+that inbox backend when the Soul supplies its member socket/token environment.
+The public SDK authenticates the existing member token and binds its broker
+connection; identity neither copies that protocol nor grants scope. No new
+CLI flag, ACP server-slot launcher or direct upstream client is involved.
 
-An integration host must supply an already-bound `request(kind, payload)`, a
-`currentRuntime()` returning only `{installation_epoch, lease_generation}`,
-shared `validateQuery`/`validateResult` callbacks returning SDK error arrays,
-and the SDK `canonicalBytes`. The callbacks must use the supported verified
-contract release; missing validation refuses construction. `takeInbox()`
-takes no arguments or queue selectors. It sends `notices.consume-one` once,
-validates the response before legacy mapping, and propagates refusals or an
-unknown transport outcome without reconnecting, replaying or calling Harbor.
-The injected request implementation must likewise never automatically replay
-a destructive call. Shared payload/compatibility rules live in
-[soul-contracts](https://github.com/true-line/soul-contracts/blob/main/schemas/hq/v1/notices.md).
+Only `take_inbox` changes backend. MCP discovery and other tool names remain
+available; explicitly invoked unmigrated tools retain their legacy client.
+The legacy client is lazy: an HQ inbox call never constructs it or attempts a
+legacy worktree bind. A partial member environment refuses the inbox call;
+HQ refusal, missing scope or unavailable dependencies never trigger fallback.
+Outside a member context the existing standalone behavior remains separate.
+It must not compete with a migrated queue; the service custody gate and
+dedicated device key retain that boundary.
 
-The shared authenticated member-query transport, its no-replay policy, the
-actual release/pin and MCP wiring remain prerequisites tracked in
-[#1441](https://github.com/true-line/agent-bot-identity/issues/1441). The adapter
-has no credential, binding-proof, runtime-discovery or scope policy code.
-Existing standalone clients must not compete with a migrated queue; the
-owner's service custody gate and dedicated device key enforce that boundary.
-No standalone flag or SDK injection activates production custody. Overall
-alias parity remains open in [HQ #13](https://github.com/true-line/agent-bot-hq/issues/13).
+The leaf adapter accepts the public SDK `queries` capability. It builds and
+validates its query synchronously inside the SDK's captured freshness attempt,
+with `replay: "never"`. `takeInbox()` accepts no selectors. It checks the full
+reply's shared schema, correlation, operation, capability and canonical byte
+limits before producing the legacy event or `{event:null}`. The shared
+[compatibility table](https://github.com/true-line/soul-contracts/blob/main/schemas/hq/v1/notices.md)
+remains the payload's home. EOF, stream failure and process shutdown close the
+SDK owner; no credential, binding or raw socket capability is returned to MCP.
+A lost consume reply has an unknown outcome: do not blindly retry it.
+
+### Dependency and acceptance status
+
+The shipped `identity/hq-member-contracts.json` pins the genuine
+[soul-contracts v0.5.0 release](https://github.com/true-line/soul-contracts/releases/tag/v0.5.0)
+at `b96239cc47571237f7064ddbcbd0edec8e365c6b`, with the manifest digest and
+154-file scope. Before opening a socket, the runtime requires an offline
+directory whose bytes and modes reproduce that exact manifest.
+`AGENT_BOT_SOUL_CONTRACTS` locates the directory; it cannot change the required
+release or digest. Missing or altered data refuses before SDK/legacy effects.
+There is no runtime network fetch or alternate schema override. The declaration
+lives beside runtime code because packaging omits `governance/`.
+
+The SDK modules are vendored byte-for-byte from the full source commit in
+`identity/vendor/agent-bot-sdk/source.json`, with per-file hashes and LICENSE.
+The signal-capable SDK source is merged PR #139 commit
+`42d6f5110019f4b7d835e139875b89a75230afe1`. Component protocol tests use actual
+SDK sockets with fixture peers; installed acceptance uses real Soul/HQ/comms.
+
+Required positive validation is a separate, never-skipped gate:
+
+```sh
+node --test tests/integration/hq-inbox-release-gate.test.mjs
+```
+
+This test provisions the exact public release as offline data, verifies its
+manifest, packages and installs the candidate, then invokes its existing MCP
+command through configured MCP discovery and calls with inherited real Soul
+member inputs. It verifies one legacy handoff then empty, rejects a forged
+repository, records the local consume tombstone, and makes no query uplink calls.
+The protocol fixture adapter requires no LLM credentials. It does not provision
+ACP server slots or prove every harness forwards member inputs. Deployments
+must configure the genuine offline dependency and verify their command and
+per-harness inheritance; a directory pinned to an older release refuses.
+
+The bounded client implementation is tracked by
+[#1444](https://github.com/true-line/agent-bot-identity/issues/1444). Parent
+[#1441](https://github.com/true-line/agent-bot-identity/issues/1441) and
+[HQ #13](https://github.com/true-line/agent-bot-hq/issues/13) retain their broader
+integration and rollout criteria.

@@ -115,6 +115,8 @@ jobs:
           node-version: 20
       - name: Run the repository validation contract
         run: npm test
+      - name: Run installed HQ inbox compatibility acceptance
+        run: node --test tests/integration/hq-inbox-release-gate.test.mjs
 
   windows-native:
     name: Windows native custody and pipe preflight

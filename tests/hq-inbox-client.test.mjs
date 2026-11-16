@@ -15,13 +15,21 @@ function fixture(overrides = {}) {
   const calls = [];
   const options = {
     request: async (kind, query) => { calls.push({ kind, query }); return reply(query); },
-    currentRuntime: async () => ({ installation_epoch: 7, lease_generation: 12 }),
+    currentRuntime: () => ({ installation_epoch: 7, lease_generation: 12 }),
     validateQuery: () => [], validateResult: () => [],
     canonicalBytes: (value) => Buffer.from(JSON.stringify(value)),
     requestId: () => 'client:request-17',
     ...overrides,
   };
-  return { client: createHqInboxClient(options), calls, options };
+  const queries = Object.hasOwn(overrides, 'queries') ? overrides.queries : {
+    async request(kind, build, policy) {
+      assert.deepEqual(policy, { replay: 'never' });
+      const query = build(options.currentRuntime());
+      assert.equal(typeof query?.then, 'undefined');
+      return options.request(kind, query);
+    },
+  };
+  return { client: createHqInboxClient({ ...options, queries }), calls, options };
 }
 
 test('fixed-one query uses only bound freshness and preserves the sanitized legacy envelope', async () => {
@@ -58,7 +66,7 @@ test('no caller selectors, absent freshness or non-validation verdict can send a
 });
 
 test('all integration dependencies are mandatory; no permissive transport or validator default', () => {
-  for (const dependency of ['request', 'currentRuntime', 'validateQuery', 'validateResult', 'canonicalBytes']) {
+  for (const dependency of ['queries', 'validateQuery', 'validateResult', 'canonicalBytes']) {
     assert.throws(() => fixture({ [dependency]: undefined }), TypeError);
   }
 });
@@ -127,4 +135,18 @@ test('full result budget and canonicalizer failures are checked before mapping',
     const f = fixture({ canonicalBytes });
     await assert.rejects(f.client.takeInbox(), (e) => ['frame_too_large', 'inbox-invalid-response'].includes(e.code));
   }
+});
+
+test('validation builders are synchronous and refuse thenables before a transport send', async () => {
+  for (const validateQuery of [() => Promise.resolve([]), async () => { throw new Error('async validation'); }]) {
+    const f = fixture({ validateQuery });
+    await assert.rejects(f.client.takeInbox(), { code: 'inbox-bad-request' }); assert.equal(f.calls.length, 0);
+  }
+  const f = fixture({ validateResult: () => Promise.resolve([]) });
+  await assert.rejects(f.client.takeInbox(), { code: 'inbox-invalid-response' }); assert.equal(f.calls.length, 1);
+});
+
+test('a query port cannot return an uncorrelated result without building its request', async () => {
+  const f = fixture({ queries: { request: () => reply({ request_id: 'unbuilt' }) } });
+  await assert.rejects(f.client.takeInbox(), { code: 'inbox-invalid-response' });
 });
