@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
 import { tmpdir, userInfo } from 'node:os';
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createDaemonServer, daemonStatus, runDaemon } from '../agent-daemon.mjs';
 import { commsPaths, createCommsSupervisor, loadCommsCredential, saveCommsCredential } from '../comms-client.mjs';
+import { daemonKeyFromSoulTokens } from '../owner-decision-watch.mjs';
 
 const DAEMON_CLI = fileURLToPath(new URL('../agent-daemon.mjs', import.meta.url));
 const ME = userInfo().username;
@@ -96,6 +98,21 @@ function startFakeBroker(socketPath, onLine) {
 
 function childEnv(world) {
   return { ...process.env, ...world.env };
+}
+
+function configureSoulTokensV2(world, descriptor) {
+  world.env.AGENT_BOT_SOUL_TOKENS = 'v2';
+  world.env.AGENT_BOT_SERVER = 'https://deployment.agent-bot.test';
+  world.env.AGENT_BOT_SERVER_STATE = path.join(world.root, 'server');
+  mkdirSync(world.env.AGENT_BOT_SERVER_STATE, { recursive: true });
+  writeFileSync(path.join(world.env.AGENT_BOT_SERVER_STATE, 'device.json'), JSON.stringify({
+    device_id: descriptor.device, server: world.env.AGENT_BOT_SERVER,
+  }));
+  writeFileSync(path.join(world.env.AGENT_BOT_SERVER_STATE, 'soul-token-issuer.json'), JSON.stringify({ issuer: descriptor.issuer }));
+  saveCommsCredential(
+    { account: ME, secret: 's3cret', brokerUid: MY_UID, pairedAt: '2026-11-10T00:00:00.000Z' },
+    { env: world.env, home: '/nonexistent' },
+  );
 }
 
 // Async spawn: the fake broker and the daemon under test live in this
@@ -321,6 +338,56 @@ test('runDaemon opens account-watch when a credential exists and status shows it
     await broker.close();
   }
   assert.deepEqual(commsPaths({ env: world.env }).socket, world.socket);
+});
+
+test('runDaemon binds the v2 account-watch identity from the pinned issuer and device without a vouch key', async () => {
+  const world = scratchWorld();
+  const descriptor = { v: 2, issuer: 'https://signer.agent-bot.test', device: 'dev_1' };
+  configureSoulTokensV2(world, descriptor);
+  const expected = daemonKeyFromSoulTokens(descriptor);
+  const ready = { event: 'ready', watchId: '11111111-1111-4111-8111-111111111111', daemonEpoch: 2, daemonKey: expected };
+  const broker = await startFakeBroker(world.socket, (line, { send }) => {
+    if (line.op === 'account-watch') send(ready);
+  });
+  const { server, comms } = await runDaemon({ env: childEnv(world), home: '/nonexistent', port: 0, config: {} });
+  try {
+    await waitFor(() => comms.watchIdentity());
+    assert.deepEqual(comms.watchIdentity(), {
+      watchId: ready.watchId, daemonEpoch: ready.daemonEpoch, daemonKey: expected,
+    });
+    assert.equal(statSyncSafe(path.join(world.env.XDG_STATE_HOME, 'agent-bot', 'vouch-key.pem')), null);
+  } finally {
+    comms.stop();
+    server.closeAllConnections();
+    await new Promise((resolve) => { server.close(resolve); });
+    rmSync(world.env.AGENT_BOT_DAEMON_STATE_PATH, { force: true });
+    await broker.close();
+  }
+});
+
+test('runDaemon refuses a v2 account-watch identity for another device', async () => {
+  const world = scratchWorld();
+  const descriptor = { v: 2, issuer: 'https://signer.agent-bot.test', device: 'dev_1' };
+  configureSoulTokensV2(world, descriptor);
+  const otherKey = daemonKeyFromSoulTokens({ ...descriptor, device: 'dev_2' });
+  const broker = await startFakeBroker(world.socket, (line, { send }) => {
+    if (line.op === 'account-watch') {
+      send({ event: 'ready', watchId: '22222222-2222-4222-8222-222222222222', daemonEpoch: 2, daemonKey: otherKey });
+    }
+  });
+  const { server, comms } = await runDaemon({ env: childEnv(world), home: '/nonexistent', port: 0, config: {} });
+  try {
+    await waitFor(() => comms.getState().lastError);
+    assert.equal(comms.watchIdentity(), null);
+    assert.match(comms.getState().lastError, /does not match this daemon's paired identity/);
+    assert.equal(statSyncSafe(path.join(world.env.XDG_STATE_HOME, 'agent-bot', 'vouch-key.pem')), null);
+  } finally {
+    comms.stop();
+    server.closeAllConnections();
+    await new Promise((resolve) => { server.close(resolve); });
+    rmSync(world.env.AGENT_BOT_DAEMON_STATE_PATH, { force: true });
+    await broker.close();
+  }
 });
 
 test('runDaemon delivers a broker wake to the soul\'s warm socket and reports warm', async () => {

@@ -1,8 +1,10 @@
 // Owner-decision watch identity (agent-comms#77, slice C0): disabled and pure.
 // Matches the broker's watch binding at agent-comms a6e9901 (merged #210).
 // The broker's account-watch `ready` event carries a broker-generated
-// `watchId`, the pairing's current `daemonEpoch` and `daemonKey`, SHA-256 of
-// the exact daemon vouch SPKI DER presented at pairing. The comms supervisor
+// `watchId`, the pairing's current `daemonEpoch` and `daemonKey`. For a v1
+// pairing that is SHA-256 of the exact daemon vouch SPKI DER presented at
+// pairing. For a v2 pairing it is the domain-separated digest defined by
+// agent-comms ADR-0309. The comms supervisor
 // records that identity once per socket; owner-decision relay events are
 // accepted only when they carry exactly the identity of the socket they
 // arrived on. Nothing here dispatches an owner decision, persists the
@@ -11,9 +13,12 @@
 import { createHash, createPublicKey } from 'node:crypto';
 
 export const OWNER_DECISION_EVENTS = Object.freeze(['owner-decision-prepare', 'owner-decision', 'owner-decision-cancel']);
+export const DAEMON_IDENTITY_V2_LABEL = 'agent-comms/daemon-identity/v2';
 const UUID4 = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
+const DEVICE = /^[A-Za-z0-9._:-]{1,128}$/;
 const matches = (pattern, value) => typeof value === 'string' && pattern.exec(value)?.[0] === value;
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 // The daemonKey we expect: SHA-256 of our own vouch public key's SPKI DER
 // bytes (44 for Ed25519), never of the PEM text.
@@ -24,7 +29,22 @@ export function daemonKeyFromPublicKeyPem(publicKeyPem) {
   if (key.asymmetricKeyType !== 'ed25519' || der.length !== 44) {
     throw Object.assign(new Error('the daemon vouch key is not an Ed25519 public key'), { code: 'owner-watch-identity' });
   }
-  return createHash('sha256').update(der).digest('hex');
+  return sha256(der);
+}
+
+// The v2 daemon identity is the broker's ADR-0309 derivation over the exact
+// normalized descriptor that pair-comms pinned. It is an identifier, not a
+// public key, and is never accepted from the broker as its own proof.
+export function daemonKeyFromSoulTokens(descriptor) {
+  const { v, issuer, device } = descriptor ?? {};
+  let parsed;
+  try { parsed = new URL(issuer); } catch { parsed = null; }
+  if (v !== 2 || !parsed || parsed.protocol !== 'https:' || parsed.origin !== issuer
+    || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash
+    || !matches(DEVICE, device)) {
+    throw Object.assign(new Error('the soul-token v2 daemon identity descriptor is invalid'), { code: 'owner-watch-identity' });
+  }
+  return sha256(Buffer.from(`${DAEMON_IDENTITY_V2_LABEL}\n${issuer}\n${device}`, 'utf8'));
 }
 
 // The identity a `ready` event binds. Two cases bind nothing, silently, and
@@ -43,7 +63,7 @@ export function watchIdentityFromReady(event, { daemonKey = null } = {}) {
   const { watchId, daemonEpoch } = event;
   if (fields.length !== 3 || !matches(UUID4, watchId) || !Number.isSafeInteger(daemonEpoch) || daemonEpoch < 1
     || !matches(DIGEST, event.daemonKey)) refuse('the ready event identity is malformed');
-  if (event.daemonKey !== daemonKey) refuse('the broker daemonKey does not match this daemon\'s vouch key');
+  if (event.daemonKey !== daemonKey) refuse('the broker daemonKey does not match this daemon\'s paired identity');
   return Object.freeze({ watchId, daemonEpoch, daemonKey });
 }
 
