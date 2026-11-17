@@ -910,6 +910,14 @@ swap needs `--repin`. `agent-bot unpair` (`agent-bot machine unpair`) revokes th
 trip. Agents reach it through `POST /v0/machine` (binding proof; the daemon
 fills soul/harness/session_id) or the `machine_*` MCP tools.
 
+From the enrolled device, the owner can run `agent-bot machine attest` to
+register its existing local pairing with Harbor. Run it from the account
+holding the paired agent-daemon key, with agent-machine running and the
+enrolled Harbor configured. Approving sends the two public keys and a signed
+local status exchange bound to a single-use Harbor challenge. Repeating the
+command verifies the recorded key IDs. It refuses revoked or conflicting
+pairings. The owner can inspect the result on Harbor's `/devices/manage`.
+
 ### MCP server: bind a conversation to its identity
 
 `agent-bot mcp` serves the sanctioned agent-bot MCP tools over stdio, so any
