@@ -103,6 +103,7 @@ export { startDaemon, stopDaemon, wrongAccountWarning } from './daemon-state.mjs
 // Re-exported for importers that predate the step-3b moves (#645).
 export { daemonStatus, joinLaunchedSoul, leaveLaunchedSoul, soulEnvironment, userToolDirs };
 import { createCommsSupervisor, pairDaemonComms, readCommsStatus } from './comms-client.mjs';
+import { daemonKeyFromSoulTokens } from './owner-decision-watch.mjs';
 import { attachWakeEndpoint } from './agent-wake.mjs';
 import { claudeAllowLayer, packageOpencodeDenies, resolveSoulMode } from './soul-mode.mjs';
 import { identityAppSouls } from './identity-app-souls.mjs';
@@ -1525,6 +1526,20 @@ export function soulTokensMode({ env = process.env, home = homedir(), now = () =
   return { v: 2, issuer: base, device: device.device_id };
 }
 
+// The account watch compares the broker's ready identity with one derived
+// locally from the exact descriptor pinned by pair-comms. The deployment URL
+// in soulTokensMode is not necessarily the signing issuer, so only the saved
+// JWKS issuer is valid here. Missing state binds no owner-decision identity;
+// a malformed descriptor refuses daemon startup rather than trusting the
+// broker's value. This v2 path never reads or creates vouch-key.pem.
+function daemonKeyForAccountWatch({ env = process.env, home = homedir(), now = () => new Date(), config } = {}) {
+  const mode = soulTokensMode({ env, home, now, config });
+  if (typeof mode !== 'object') return null;
+  const issuer = loadSoulTokenIssuer({ env, home });
+  if (issuer === null) return null;
+  return daemonKeyFromSoulTokens({ v: 2, issuer, device: mode.device });
+}
+
 async function handleVouchRequest({
   req,
   res,
@@ -2438,7 +2453,8 @@ async function serveDaemon({
   // Souls launched before 0.10.9 read as unmanaged until marked from the
   // journal (#409). A census that cannot be rewritten leaves them as they are.
   try { backfillManagedSouls(onLaunch.launched(), { file: populationFile({ env, home }) }); } catch { /* shown as unmanaged */ }
-  const comms = createCommsSupervisor({ env, home, now, onWake, onLaunch });
+  const daemonKey = daemonKeyForAccountWatch({ env, home, now, config });
+  const comms = createCommsSupervisor({ env, home, now, onWake, onLaunch, daemonKey });
   const relay = createCommsRelay({ env: { ...harnessEnv, PATH: resumePath(harnessEnv, home) } });
   const taskReporter = createTaskReporter({
     file: path.join(path.dirname(daemonStateFile({ env, home })), 'task-turns.jsonl'),

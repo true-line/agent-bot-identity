@@ -189,7 +189,10 @@ agent-comms are **signed by the identity service**, not by a host key (#1196):
   server state directory before the pairing request lands, and `/v0/vouch`
   refuses a token minted under another issuer — or any v2 request while the
   pin is missing (`credential-unavailable`; re-run `pair-comms`). An
-  existing `vouch-key.pem` can be deleted once the broker is re-paired.
+  existing `vouch-key.pem` can be deleted once the broker is re-paired. The
+  daemon derives the account-watch `daemonKey` locally from this pinned issuer
+  and device using agent-comms ADR-0309; it does not retain a host key to
+  check the broker's `ready` identity.
 - `GET /v0/health` reports `soulTokens: 'v2' | 'v1'` and, in v2 mode,
   `vouchKeyOnHost` (a stat, never a read).
 - The broker must run an agent-comms release that accepts v2 tokens and the

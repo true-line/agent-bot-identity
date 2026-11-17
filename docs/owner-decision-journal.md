@@ -343,11 +343,12 @@ and the reconciliation pairs and local outcome slot.
 owner-decision relay intake (agent-comms#77).
 
 - **Recording.** The broker's account-watch `ready` event carries `watchId`,
-  `daemonEpoch` and `daemonKey`, per agent-comms `a6e9901` (#210). `daemonKey`
-  is SHA-256 of the exact daemon vouch SPKI DER bytes presented at pairing,
-  never of the PEM. The supervisor records these once per socket, in memory
-  only, and only if the fields are well formed and `daemonKey` equals the
-  value we compute ourselves from our own vouch key.
+  `daemonEpoch` and `daemonKey`, per agent-comms `a6e9901` (#210), amended by
+  agent-comms ADR-0309 (`9da62cb`). For a v1 pairing `daemonKey` is SHA-256 of
+  the exact daemon vouch SPKI DER bytes, never of the PEM. For v2 it is the
+  domain-separated digest of the issuer and device pinned at pairing. The
+  supervisor records these once per socket, in memory only, and only if the
+  fields are well formed and `daemonKey` equals the value it derives locally.
 - **When nothing binds.** An old broker's bare `ready` binds nothing,
   silently, and so does a daemon with no expected key configured. Wake and
   launch keep working either way. Partial or malformed fields, or a
@@ -357,7 +358,8 @@ owner-decision relay intake (agent-comms#77).
 - **First ready only.** The identity binds at the first `ready` of a socket.
   A repeated `ready` or `{ok:true}` on the same socket never replaces or
   clears it, and is surfaced as an `owner-watch-identity` error. The expected
-  key must be an Ed25519 vouch key, 44 SPKI DER bytes.
+  identity is derived from the approved v2 pairing descriptor in production;
+  explicit legacy v1 callers can still supply the approved vouch key.
 - **Reconnects.** A reconnect drops the identity, and nothing is replayed.
   `watchIdentity()` exposes the live identity; `daemon status` output is
   unchanged.
@@ -366,8 +368,10 @@ owner-decision relay intake (agent-comms#77).
   bindings equal the socket's identity exactly.
 - **Still disabled.** Intake doesn't happen yet. Every owner-decision event is
   dropped before the wake path, and an event that isn't bound to the socket's
-  identity is surfaced as an error, and the daemon doesn't pass its expected
-  `daemonKey` yet, so no identity is bound in production.
+  identity is surfaced as an error. A v2 daemon now passes the identity it
+  derives from its pinned issuer and device, so the socket can bind without a
+  vouch key; this does not enable owner-decision intake or authority. The
+  separate trust observation still uses its legacy Ed25519 vouch-key shape.
 
 ## Prepare-side target resolution
 

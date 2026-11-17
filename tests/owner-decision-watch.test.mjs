@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
-  OWNER_DECISION_EVENTS, daemonKeyFromPublicKeyPem, ownerDecisionIntakeBound, watchIdentityFromReady,
+  DAEMON_IDENTITY_V2_LABEL, OWNER_DECISION_EVENTS, daemonKeyFromPublicKeyPem, daemonKeyFromSoulTokens,
+  ownerDecisionIntakeBound, watchIdentityFromReady,
 } from '../owner-decision-watch.mjs';
 
 const { publicKey } = generateKeyPairSync('ed25519');
@@ -17,6 +18,21 @@ test('the expected daemonKey is SHA-256 of our own Ed25519 vouch SPKI DER, and o
   for (const [type, options] of [['rsa', { modulusLength: 2048 }], ['ec', { namedCurve: 'P-256' }], ['ed448', {}], ['x25519', {}]]) {
     const other = generateKeyPairSync(type, options).publicKey.export({ type: 'spki', format: 'pem' });
     assert.throws(() => daemonKeyFromPublicKeyPem(other), { code: 'owner-watch-identity' }, type);
+  }
+});
+
+test('a soul-token v2 descriptor derives exactly the agent-comms ADR-0309 daemon identity', () => {
+  const descriptor = { v: 2, issuer: 'https://agent-bot.test', device: 'dev_1' };
+  const expected = createHash('sha256')
+    .update(`${DAEMON_IDENTITY_V2_LABEL}\n${descriptor.issuer}\n${descriptor.device}`)
+    .digest('hex');
+  assert.equal(daemonKeyFromSoulTokens(descriptor), expected);
+  assert.notEqual(daemonKeyFromSoulTokens({ ...descriptor, device: 'dev_2' }), expected);
+  assert.notEqual(daemonKeyFromSoulTokens({ ...descriptor, issuer: 'https://other.test' }), expected);
+  for (const invalid of [null, {}, { ...descriptor, v: 1 }, { ...descriptor, issuer: 'https://agent-bot.test/path' },
+    { ...descriptor, issuer: 'https://user:pass@agent-bot.test' }, { ...descriptor, issuer: 'http://agent-bot.test' },
+    { ...descriptor, device: 'dev?bad' }]) {
+    assert.throws(() => daemonKeyFromSoulTokens(invalid), { code: 'owner-watch-identity' }, JSON.stringify(invalid));
   }
 });
 
