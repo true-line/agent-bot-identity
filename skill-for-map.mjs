@@ -23,6 +23,7 @@ export const SKILL_REFERENCES = Object.freeze({
   'ensure-private-key': 'operations.md',
   secret: 'operations.md',
   daemon: 'operations.md',
+  machine: 'operations.md',
   workflow: 'operations.md',
   'signed-commit': 'verified-publish.md',
   identity: 'execution-identities.md',
@@ -38,7 +39,7 @@ export const SKILL_REFERENCES = Object.freeze({
 // sandbox), docs/, or the command's own --help is the guidance; internal
 // commands are run by hooks and harness configs, not by an agent.
 export const NO_SKILL_REFERENCE = Object.freeze([
-  'join', 'principal', 'harness', 'broker', 'keyd', 'owner', 'machine', 'pair', 'unpair', 'approvals', 'audit', 'mcp', 'events',
+  'join', 'principal', 'harness', 'broker', 'keyd', 'owner', 'pair', 'unpair', 'approvals', 'audit', 'mcp', 'events',
   'reach-mcp', 'web', 'telegram', 'update', 'skill', 'sop', 'sandbox', 'metrics', 'diagnostics', 'server', 'cloud',
   'credential', 'worktree-token', 'gh-inbox-query', 'gh-pr-view-json',
   'claude-worktree-create', 'agent-hook', 'hook',
