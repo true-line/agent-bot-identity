@@ -35,6 +35,21 @@ test('the digest of a plan saved by managed-machine is recomputed exactly', () =
   assert.deepEqual([...new Set(read.plan.steps.map((s) => s.action))].sort(), ['create', 'none', 'remove', 'repair', 'write']);
 });
 
+test('the owner sees only the plans in the directory root apply will use on this platform', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'members-platform-'));
+  roots.push(home);
+  for (const [platform, segments] of [['darwin', ['Library', 'Application Support']], ['linux', ['.local', 'share']]]) {
+    const dir = path.join(home, ...segments, 'managed-machine', 'members', 'plans');
+    mkdirSync(dir, { recursive: true });
+    const id = platform === 'darwin' ? 'plan-20261110T050000Z-a001' : PLAN_ID;
+    writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ ...SAVED, plan_id: id }));
+  }
+  for (const [platform, id] of [['darwin', 'plan-20261110T050000Z-a001'], ['linux', PLAN_ID]]) {
+    assert.deepEqual(listMembersPlans({ home, platform }).map((p) => p.plan_id), [id]);
+    assert.equal(readMembersPlan({ home, platform, planId: id }).plan_digest, SAVED.plan_digest);
+  }
+});
+
 test('a plan edited after planning is refused', () => {
   const edit = (fn) => { const s = JSON.parse(FIXTURE); fn(s); return JSON.stringify(s); };
   const cases = {

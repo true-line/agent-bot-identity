@@ -157,6 +157,8 @@ jobs:
           node-version: 20
       - name: Run the owner-decision journal tests on Darwin
         run: node --test tests/owner-decision-journal*.test.mjs
+      - name: Verify native saved-plan discovery and signed owner approval
+        run: node --test --test-name-pattern='^approve-members:' tests/web-client.test.mjs
 
   codeql:
     name: Advanced CodeQL

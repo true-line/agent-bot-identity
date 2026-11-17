@@ -1,0 +1,1 @@
+- The owner dashboard lists and reviews macOS member-account plans from the same Application Support directory used by `managed-machine members apply` (#1452).

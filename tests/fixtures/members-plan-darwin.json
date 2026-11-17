@@ -1,0 +1,40 @@
+{
+  "plan_id": "plan-20261110T040000Z-abcd",
+  "plan_digest": "7d3dfac82ca9113d8603f7c30f471205c62e7c7f0f13d4b7f8b5562552c03792",
+  "created_at": "2026-11-10T04:00:00Z",
+  "plan": {
+    "version": 3,
+    "hq_account": "_agent-bot-hq",
+    "dir": "none",
+    "members": [
+      "_abm-lead",
+      "_abm-spec"
+    ],
+    "steps": [
+      {
+        "kind": "hq-account",
+        "target": "_agent-bot-hq",
+        "action": "create",
+        "group": "_agent-bot-hq",
+        "mode": "0700",
+        "detail": "hidden role account, home /var/agent-bot-hq, shell /usr/bin/false, private group, no password, no other groups"
+      },
+      {
+        "kind": "account",
+        "target": "_abm-lead",
+        "action": "create",
+        "group": "_abm-lead",
+        "mode": "0700",
+        "detail": "home /var/agent-bot-harness-_abm-lead, shell /usr/bin/false, private group, no password, no other groups"
+      },
+      {
+        "kind": "account",
+        "target": "_abm-spec",
+        "action": "create",
+        "group": "_abm-spec",
+        "mode": "0700",
+        "detail": "home /var/agent-bot-harness-_abm-spec, shell /usr/bin/false, private group, no password, no other groups"
+      }
+    ]
+  }
+}
