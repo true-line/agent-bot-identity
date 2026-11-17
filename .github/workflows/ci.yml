@@ -62,14 +62,16 @@ jobs:
       - id: evidence
         name: Find a successful complete-suite run for this exact commit
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
-            --jq 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and (.event == "pull_request" or .event == "workflow_dispatch") and .conclusion == "success") | .id) // empty')
+          set -euo pipefail
+          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs"
+          run_id=$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "$api?head_sha=$GITHUB_SHA&per_page=100" \
+            | jq -r 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and (.event == "pull_request" or .event == "workflow_dispatch") and .conclusion == "success") | .id) // empty')
           validated=false
           if [ -n "$run_id" ]; then
-            validated=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=latest&per_page=100" \
-              --jq 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
+            validated=$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "$api/$run_id/jobs?filter=latest&per_page=100" \
+              | jq -r 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
           fi
           echo "validated=$validated" >> "$GITHUB_OUTPUT"
 
@@ -85,15 +87,17 @@ jobs:
       - id: evidence
         name: Find a successful manual complete suite for the PR head
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=workflow_dispatch&head_sha=$TARGET_SHA&per_page=100" \
-            --jq 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .display_title == "CI purpose=exact-sha-preflight" and .conclusion == "success") | .id) // empty')
+          set -euo pipefail
+          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs"
+          run_id=$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "$api?event=workflow_dispatch&head_sha=$TARGET_SHA&per_page=100" \
+            | jq -r 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .display_title == "CI purpose=exact-sha-preflight" and .conclusion == "success") | .id) // empty')
           validated=false
           if [ -n "$run_id" ]; then
-            validated=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=latest&per_page=100" \
-              --jq 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
+            validated=$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "$api/$run_id/jobs?filter=latest&per_page=100" \
+              | jq -r 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
           fi
           echo "validated=$validated" >> "$GITHUB_OUTPUT"
 
