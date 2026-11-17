@@ -1,0 +1,1 @@
+- Soul-token v2 daemons bind their account-watch identity from the pinned signing issuer and enrolled device, so they no longer need a host `vouch-key.pem` for the broker ready check (#1450).
