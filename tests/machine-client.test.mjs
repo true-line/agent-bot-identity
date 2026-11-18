@@ -1,7 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { createPrivateKey, createPublicKey, generateKeyPairSync, sign as edSign } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign as edSign, verify as edVerify } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -104,7 +104,7 @@ async function fakeMachine(root, { keypair = generateKeyPairSync('ed25519'), han
       const req = JSON.parse(buf.slice(0, nl));
       received.push(req);
       const res = handler(req, daemonPub);
-      conn.end(`${JSON.stringify(res)}\n`);
+      conn.end(`${typeof res === 'string' ? res : JSON.stringify(res)}\n`);
     });
   });
   await new Promise((resolve) => server.listen(sock, resolve));
@@ -112,8 +112,7 @@ async function fakeMachine(root, { keypair = generateKeyPairSync('ed25519'), han
   return { sock, dir, daemonPub, received, server };
 }
 
-function signResponse(res, priv) {
-  const body = res.body !== undefined ? JSON.stringify(res.body) : '';
+function signResponse(res, priv, body = res.body !== undefined ? JSON.stringify(res.body) : '') {
   res.timestamp = Math.floor(Date.now() / 1000);
   res.nonce = 'TESTNONCE00000000000001';
   const payload = [String(res.ok), res.diagnostic ?? '', res.message ?? '', res.state ?? '', body, String(res.timestamp), res.nonce, res.request_nonce ?? ''].join('\n');
@@ -415,4 +414,103 @@ test('runMachineCli pair on a shared channel prints the prefix-owner enroll comm
   assert.match(out, /As the prefix owner run:\nmanaged-machine daemon pair --enroll [0-9a-f]{64} --fingerprint [0-9a-f]{64} --client agent-daemon/);
   assert.doesNotMatch(out, /paired: agent-machine accepted/);
   assert.equal(existsSync(path.join(channel, 'peers')), false);
+});
+
+test('machine attest binds an existing local pair to the enrolled device over its signed session', async (t) => {
+  const { runMachineCli } = await import('../cli/machine.mjs');
+  const { enroll, ServerSession } = await import('../identity/server-client.mjs');
+  const { BASE, fakeServer, sleep } = await import('./helpers/fake-identity-server.mjs');
+  const home = scratch();
+  const keypair = generateKeyPairSync('ed25519');
+  let accepted = true;
+  let machineReply;
+  const rawBody = '{"label":"\\u003cagent\\u003e"}';
+  const machine = await fakeMachine(home, {
+    keypair,
+    handler(request) {
+      const reply = signResponse({ ok: accepted, state: 'reported', request_nonce: request.nonce, body: JSON.parse(rawBody) }, keypair.privateKey, rawBody);
+      machineReply = JSON.stringify(reply).replace(JSON.stringify(reply.body), rawBody);
+      return machineReply;
+    },
+  });
+  t.after(() => machine.server.close());
+  const env = { AGENT_BOT_SERVER_STATE: path.join(home, 'server'), AGENT_MACHINE_DIR: machine.dir };
+  const harbor = fakeServer();
+  const device = await enroll({ base: BASE, env, home, harnesses: ['grok'], fetchImpl: harbor.fetch, sleep });
+  const session = new ServerSession({ base: BASE, env, home, fetchImpl: harbor.fetch });
+  const output = [];
+  let consent = false;
+  const options = {
+    env, home, socketPath: machine.sock, session, stdout: { write: (s) => output.push(s) },
+    gate: async (action) => {
+      assert.equal(action, `machine attest existing local pairing for ${device.device_id} to ${BASE}`);
+      if (!consent) throw new Error('owner declined');
+    },
+  };
+  const run = () => runMachineCli(['attest'], options);
+  const before = harbor.calls.length;
+  await assert.rejects(run, /owner declined/);
+  consent = true;
+  await assert.rejects(run, /no existing agent-daemon pairing key/);
+  assert.equal(loadMachineSigner({ env, home }), null);
+  const signer = loadOrCreateMachineKey({ env, home });
+  await assert.rejects(run, /machine-not-paired/);
+  assert.equal(harbor.calls.length, before);
+  pinDaemonPub({ env, home });
+
+  const keyId = (key) => createHash('sha256').update(key).digest('hex').slice(0, 16);
+  const receipt = { state: 'attested', daemon_key_id: keyId(signer.publicKeyRaw), machine_key_id: keyId(machine.daemonPub) };
+  const challenge = 'A'.repeat(32);
+  const expectedMachineKey = machine.daemonPub.toString('base64');
+  const binding = `agent-bot-pairing/1\n${device.device_id}\n${challenge}\n${expectedMachineKey}\n`;
+  const expectedNonce = 'abp1.' + createHash('sha256').update(binding).digest('base64url');
+  const signerKey = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: signer.publicKeyRaw.toString('base64url') }, format: 'jwk' });
+  let state = { state: 'none' };
+  let challengeReply = { challenge };
+  let dropReceipt = false;
+  let posts = 0;
+  harbor.pairingReply = (route, init) => {
+    if (init.method === 'GET') return state;
+    if (route.endsWith('/challenge')) return challengeReply;
+    posts++;
+    const proof = JSON.parse(init.body);
+    assert.equal(proof.challenge, challenge);
+    assert.equal(proof.machine_key, expectedMachineKey);
+    assert.equal(proof.request.verb, 'status');
+    assert.equal(proof.request.nonce, expectedNonce);
+    assert.equal(proof.request.public_key, signer.publicKeyRaw.toString('base64'));
+    assert.ok(edVerify(null, requestCanonical(proof.request), signerKey, Buffer.from(proof.request.signature, 'base64')));
+    assert.ok(init.body.endsWith('"response":' + machineReply + '}'), 'preserves the signed body bytes');
+    assert.equal(verifyResponse(machineReply, machine.daemonPub, { expectedNonce }).ok, true);
+    state = receipt;
+    if (dropReceipt) throw Object.assign(new TypeError('transport closed'), { code: 'ECONNRESET' });
+    return receipt;
+  };
+
+  state = { state: 'revoked' };
+  await assert.rejects(run, /revoked/);
+  state = { state: 'none' };
+  challengeReply = { challenge, request_nonce: 'unrelated' };
+  await assert.rejects(run, /request nonce/);
+  challengeReply = { challenge, device_id: 'other' };
+  await assert.rejects(run, /different enrolled device/);
+  challengeReply = { challenge };
+  assert.equal(machine.received.length, 0);
+  accepted = false;
+  await assert.rejects(run, /refused the signed status/);
+  assert.equal(posts, 0);
+  accepted = true;
+  assert.equal(await run(), 0);
+  assert.match(output.at(-1), /attested device dev_1/);
+  const exchanges = machine.received.length;
+  assert.equal(await run(), 0);
+  assert.equal(posts, 1);
+  assert.equal(machine.received.length, exchanges);
+  state = { ...receipt, machine_key_id: 'different' };
+  await assert.rejects(run, /did not confirm/);
+  assert.equal(posts, 1);
+  state = { state: 'none' };
+  dropReceipt = true;
+  assert.equal(await run(), 0);
+  assert.equal(posts, 2, 'recovers a lost receipt by reading the committed pair');
 });

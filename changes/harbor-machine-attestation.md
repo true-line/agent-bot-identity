@@ -1,0 +1,1 @@
+- Owners can run `agent-bot machine attest` on an enrolled device to register its existing agent-daemon and agent-machine pairing with Harbor (true-line/agent-bot#66).

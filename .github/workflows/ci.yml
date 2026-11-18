@@ -157,6 +157,8 @@ jobs:
           node-version: 20
       - name: Verify native saved-plan discovery and signed owner approval
         run: node --test --test-name-pattern='^approve-members:' tests/web-client.test.mjs
+      - name: Verify owner-initiated machine attestation on Darwin
+        run: node --test --test-name-pattern="^machine attest" tests/machine-client.test.mjs
       - name: Run the owner-decision journal tests on Darwin
         run: node --test tests/owner-decision-journal*.test.mjs
       - name: Build the macOS owner approval app and test the pairing challenge

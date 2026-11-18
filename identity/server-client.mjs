@@ -764,7 +764,7 @@ export class ServerSession {
     return promise;
   }
 
-  async call(method, route, payload) {
+  async call(method, route, payload, { requireRequestNonce = false } = {}) {
     this.device();
     const serverKey = loadPinnedServerKey(this.opts);
     if (!serverKey) throw new Error('no pinned server key; re-enroll');
@@ -820,6 +820,9 @@ export class ServerSession {
           : new Error(`agent-bot server ${route}: ${res.status} ${json.error ?? ''}${typeof json.error_description === 'string' ? ` (${json.error_description.slice(0, 200)})` : ''}`.trim());
         e.status = res.status;
         throw e;
+      }
+      if (requireRequestNonce && json.request_nonce !== jti) {
+        throw new Error(`server response for ${route} has a mismatched request nonce`);
       }
       return json;
     }

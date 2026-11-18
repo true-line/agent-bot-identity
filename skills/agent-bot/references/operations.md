@@ -25,6 +25,16 @@ Use this reference for setup, minting, diagnostics, and identity repair.
 | Restore an App key and issuer from pass-cli (legacy local custody only) | `agent-bot ensure-private-key --app <slug> [--force]` |
 | Read an authorized password/API key | `agent-bot secret get --provider <id> --collection <name> --item <title> --field <name> --reason <text>` |
 
+## Attest an existing local machine pairing
+
+When Harbor reports `pairing_required`, the owner can check `agent-bot machine status`
+from the enrolled account on the device. If the signed local status succeeds, run
+`agent-bot machine attest` from the owner's terminal and review the named Harbor
+server and enrolled device in the approval prompt. A successful result prints the
+device ID and both registered key IDs. The same command checks an existing
+registration. If Harbor shows a different or revoked pairing, review the device
+on `/devices/manage` before taking further action.
+
 ## Bootstrap a fresh machine
 
 Treat **“install agent bot identities”** as a request for the complete
