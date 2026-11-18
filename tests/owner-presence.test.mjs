@@ -834,6 +834,23 @@ test('routine CLI consent asks through keyd presence only, with informative pros
   }), { code: 'owner-declined' });
 });
 
+test('Machine pairing errors preserve the cause and keep custody out of the standard account', async () => {
+  const cause = Object.assign(new Error('signature verification failed'), { code: 'presence-unavailable' });
+  for (const action of ['machine-pair', 'machine-unpair']) {
+    await assert.rejects(presenceOrConsent(action, {
+      presence: async () => { throw cause; },
+      summarize: () => action,
+    }), (error) => {
+      assert.equal(error.code, 'presence-unavailable');
+      assert.equal(error.cause, cause);
+      assert.match(error.message, /signature verification failed/);
+      assert.match(error.message, /Keep agent-bot-keyd out of the standard user account/);
+      assert.doesNotMatch(error.message, /install or fix/i);
+      return true;
+    });
+  }
+});
+
 test('presenceUnavailableError and describeUnpinnedKeyd name the underlying cause', async (t) => {
   const { dir } = home(t);
   const { describeUnpinnedKeyd } = await import('../owner-presence.mjs');

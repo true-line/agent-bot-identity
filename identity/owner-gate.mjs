@@ -134,6 +134,14 @@ export function ownerActionSummary(action, { souls = null, listSouls = null } = 
 // the administrator-password dialog this gate never raises.
 export function presenceUnavailableError(action, summary, cause = null) {
   const detail = cause?.message ? ` (${cause.message})` : '';
+  if (action === 'machine-pair' || action === 'machine-unpair') {
+    return Object.assign(new Error(
+      `${action} was not approved: owner approval is unavailable${detail}. `
+      + 'For protected macOS, Machine holds credentials in the admin account. '
+      + 'Keep agent-bot-keyd out of the standard user account. '
+      + 'Pairing requires a separate owner approval client.',
+    ), { code: 'presence-unavailable', ...(cause ? { cause } : {}) });
+  }
   return Object.assign(new Error(
     `${action} was not approved: agent-bot-keyd could not ask the owner here${detail}, so nobody approved "${summary}". `
     + 'Install or fix agent-bot-keyd, or run the owner command from a signed-in GUI session on this Mac, then retry. '
