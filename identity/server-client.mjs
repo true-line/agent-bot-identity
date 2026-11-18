@@ -30,12 +30,14 @@ import {
   appLifecycleStatus,
   enabledFeaturesFromEnv,
   harnessForSlug,
+  isRegisteredAppSlug,
   loadConfig,
   parseFeatureList,
   rosterScope,
+  slugForHarness,
   writeEnabledFeaturesToConfig,
 } from '../config.mjs';
-import { profileAppSlugs } from '../organization-profile-schema.mjs';
+import { PROFILE_HARNESSES, profileAppSlugs } from '../organization-profile-schema.mjs';
 import { canonicalJson } from '../canonical-json.mjs';
 import { enforcementProfile } from './identity-format.mjs';
 import { installGhShim } from './install-gh-shim.mjs';
@@ -131,6 +133,21 @@ export function serverStateDir({ env = process.env, home = homedir() } = {}) {
 export function serverHarness(name) {
   if (!name) return null;
   return name === 'claude-code' ? 'claude' : name;
+}
+
+// A device grant asks the server for App slugs. Resolve short harness
+// names before the grant starts; custom slugs can also be registered locally.
+function enrollmentSlug(name, config, env) {
+  const aliases = Object.keys(config.apps ?? {});
+  if (PROFILE_HARNESSES.includes(name) || aliases.includes(name)) {
+    const slug = slugForHarness(name, config, { env });
+    if (slug) return slug;
+  }
+  const qualified = name.includes('-') && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i.test(name);
+  if (qualified || isRegisteredAppSlug(name, config, null, { env })) return name;
+  const candidates = new Set([...aliases, ...PROFILE_HARNESSES]);
+  const mapped = [...candidates].filter((harness) => slugForHarness(harness, config, { env })).sort();
+  throw new Error(`no App mapping for harness "${name}"; mapped harnesses: ${mapped.join(', ') || 'none'}. Pass the full App slug or configure the harness mapping.`);
 }
 
 export function ambientHarness(env = process.env) {
@@ -1218,7 +1235,15 @@ export async function main(argv = process.argv.slice(2), { env = process.env, ou
       out.write(a.json ? `${JSON.stringify(status)}\n` : formatStatus(status));
       return status.enrolled && status.ok === false ? 1 : 0;
     }
-    let addHarnesses = [...a.addHarnesses];
+    let requested = a.harnesses;
+    let addHarnesses = a.addHarnesses;
+    // A headless enrollment token fixes its own scope on the server.
+    if (!env.AGENT_BOT_ENROLL_TOKEN && (requested.length || addHarnesses.length)) {
+      const cfg = loadConfig({ env, home: env.HOME });
+      const resolve = (name) => enrollmentSlug(name, cfg, env);
+      requested = requested.map(resolve);
+      addHarnesses = addHarnesses.map(resolve);
+    }
     if (a.allConfigured) {
       const cfg = loadConfig({ env });
       const candidates = rosterScope(cfg) ?? [
@@ -1254,7 +1279,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, ou
       }
       addHarnesses = [...new Set([...addHarnesses, ...filtered])];
     }
-    const harnesses = (a.harnesses.length || addHarnesses.length) ? a.harnesses : [ambientHarness(env)].filter(Boolean);
+    const harnesses = (requested.length || addHarnesses.length) ? requested : [ambientHarness(env)].filter(Boolean);
     const record = await enroll({
       base, env, harnesses, addHarnesses, replaceHarnesses: a.replaceHarnesses,
       tags: a.tags, features: a.features, force: a.force, fetchImpl, ...(sleep ? { sleep } : {}),

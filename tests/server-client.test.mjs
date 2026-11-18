@@ -79,6 +79,38 @@ test('argument parsing and harness names', async () => {
   assert.deepEqual(dev.harnesses, ['you-opencode-agent']);
 });
 
+test('server enroll requests mapped App slugs and accepts literal slugs', async () => {
+  const env = { ...sandbox(), AGENT_BOT_SERVER: BASE };
+  writeFileSync(env.AGENT_BOT_CONFIG, JSON.stringify({ apps: { claude: 'fleet-pilot', codex: 'builder', grok: 'qwen' } }));
+  const srv = fakeServer();
+  const err = [];
+  const io = { env, fetchImpl: srv.fetch, sleep, out: { write() {} }, err: { write: (s) => err.push(s) } };
+  assert.equal(await main(['enroll', '--harness', 'claude'], io), 0, err.join(''));
+  assert.deepEqual(srv.pending.harnesses, ['fleet-pilot']);
+  assert.equal(await main(['enroll', '--harness', 'claude-code', '--harness', 'fleet-pilot',
+    '--add-harness', 'codex', '--harness', 'other-fleet-agent'], io), 0, err.join(''));
+  assert.deepEqual(srv.pending.harnesses, ['fleet-pilot', 'other-fleet-agent', 'builder']);
+  assert.deepEqual(loadDevice({ env }).harnesses, srv.pending.harnesses);
+  assert.equal(await main(['enroll', '--add-harness', 'builder', '--harness', 'qwen'], io), 0, err.join(''));
+  assert.deepEqual(srv.pending.harnesses, ['fleet-pilot', 'other-fleet-agent', 'builder', 'qwen']);
+});
+
+test('unmapped enrollment names fail before requests or local enrollment writes', async () => {
+  const env = { ...sandbox(), AGENT_BOT_SERVER: BASE };
+  writeFileSync(env.AGENT_BOT_CONFIG, JSON.stringify({ apps: { claude: 'fleet-pilot' } }));
+  const srv = fakeServer();
+  for (const name of ['codex', 'cluade']) {
+    const err = [];
+    const rc = await main(['enroll', '--harness', name], {
+      env, fetchImpl: srv.fetch, sleep, out: { write() {} }, err: { write: (s) => err.push(s) },
+    });
+    assert.equal(rc, 1);
+    assert.match(err.join(''), /mapped harnesses: claude/);
+  }
+  assert.deepEqual(srv.calls, []);
+  assert.equal(existsSync(statePaths({ env }).dir), false);
+});
+
 test('device-grant enrollment stores a 0600 P-256 key, pins the server key and records management', async () => {
   const env = sandbox();
   const srv = fakeServer({ approveAfter: 2 });

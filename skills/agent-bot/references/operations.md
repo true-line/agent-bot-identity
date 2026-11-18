@@ -184,7 +184,7 @@ runtime and `gh` shim (`qwts/agent-bot-identity`), and machine setup
    gets a credential reference, not a raw token, so standalone `mint-token` is
    refused in soul-bound checkouts). If the device is not yet enrolled for the
    App slug, `agent-bot start` automatically initiates
-   `agent-bot server enroll --add-harness <slug>` (or run
+   `agent-bot server enroll --add-harness <harness-or-app-slug>` (or run
    `agent-bot server enroll --all-configured` to enroll all active configured
    harnesses at once). Failures: `credential-unavailable`, `device-revoked`
    (re-enroll with `agent-bot server enroll --force`, an owner action),
