@@ -28,11 +28,11 @@ function refuse(message) {
   return Object.assign(new Error(`${message} [members-plan-invalid]`), { code: 'members-plan-invalid' });
 }
 
-// Where managed-machine saves a plan on Linux when no state directory is
-// configured. `members apply` reads the same fixed place under sudo, so a
-// plan saved anywhere else could be approved here but never applied.
-export function membersPlansDir({ home = homedir() } = {}) {
-  return path.join(home, '.local', 'share', 'managed-machine', 'members', 'plans');
+// Match the fixed path that managed-machine members apply reopens under
+// the sudo owner's registered home. The owner dashboard reads that home.
+export function membersPlansDir({ home = homedir(), platform = process.platform } = {}) {
+  const base = platform === 'darwin' ? ['Library', 'Application Support'] : ['.local', 'share'];
+  return path.join(home, ...base, 'managed-machine', 'members', 'plans');
 }
 
 function plain(value, what) {
@@ -76,9 +76,9 @@ export function membersPlanDigest(plan) {
 }
 
 // Read one saved plan. Returns the canonical plan and its verified digest.
-export function readMembersPlan({ home = homedir(), planId } = {}) {
+export function readMembersPlan({ home = homedir(), platform = process.platform, planId } = {}) {
   if (typeof planId !== 'string' || !MEMBERS_PLAN_ID.test(planId)) throw refuse('plan_id is not a plan id');
-  const file = path.join(membersPlansDir({ home }), `${planId}.json`);
+  const file = path.join(membersPlansDir({ home, platform }), `${planId}.json`);
   let stat;
   try { stat = lstatSync(file); } catch { throw Object.assign(new Error(`no saved plan ${planId}; run managed-machine members plan first [members-plan-missing]`), { code: 'members-plan-missing' }); }
   if (!stat.isFile() || stat.size > MAX_PLAN_BYTES) throw refuse('the saved plan is not a regular file of a sane size');
@@ -99,14 +99,14 @@ export function readMembersPlan({ home = homedir(), planId } = {}) {
 
 // The newest saved plans, newest first. A file that cannot be verified is
 // listed with its error and no content, so the owner sees why it is absent.
-export function listMembersPlans({ home = homedir(), limit = 10 } = {}) {
+export function listMembersPlans({ home = homedir(), platform = process.platform, limit = 10 } = {}) {
   let names;
-  try { names = readdirSync(membersPlansDir({ home })); } catch { return []; }
+  try { names = readdirSync(membersPlansDir({ home, platform })); } catch { return []; }
   const ids = names.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -5)).filter((id) => MEMBERS_PLAN_ID.test(id));
   ids.sort().reverse();
   return ids.slice(0, limit).map((planId) => {
     try {
-      const { plan_digest, created_at, plan } = readMembersPlan({ home, planId });
+      const { plan_digest, created_at, plan } = readMembersPlan({ home, platform, planId });
       return {
         plan_id: planId, plan_digest, created_at, hq_account: plan.hq_account, dir: plan.dir, members: plan.members,
         changes: plan.steps.filter((s) => s.action !== 'none' && s.action !== 'write').length,

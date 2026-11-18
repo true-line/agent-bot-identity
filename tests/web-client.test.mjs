@@ -1059,9 +1059,9 @@ test('machine/server honours a narrowed principal immediately — the principal 
 
 // --- agent-machine view (#1295) ---------------------------------------------
 import { createServer } from 'node:net';
-import { generateKeyPairSync, sign as amSign } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync, sign as amSign, verify as amVerify } from 'node:crypto';
 import { chmodSync } from 'node:fs';
-import { AGENT_MACHINE_DIR, loadOrCreateMachineKey, machineSocketPath, pinDaemonPub } from '../machine-client.mjs';
+import { AGENT_MACHINE_DIR, loadOrCreateMachineKey, machineSocketPath, pinDaemonPub, requestCanonical } from '../machine-client.mjs';
 
 async function fakeAgentMachine(home, { keypair = generateKeyPairSync('ed25519'), signKey = null, replies = {} } = {}) {
   const dir = AGENT_MACHINE_DIR(home);
@@ -2100,17 +2100,25 @@ test('serverStatusReport and GET /ui/api/machine/server include last_mint_outcom
 
 // --- Member accounts plans: approve-members through the Approvals tab (#1401)
 
-test('approve-members: the saved plan becomes a proposal; only an approval sends plan_id and plan_digest', { skip: process.platform === 'win32' }, async () => {
+for (const platform of ['linux', 'darwin']) {
+  test(`approve-members: discover the ${platform} plan and sign the approved digest`, { skip: process.platform === 'win32' }, () => approveSavedPlan(platform));
+}
+
+async function approveSavedPlan(platform) {
   const { root, env } = scratch();
-  const fixture = readFileSync(new URL('./fixtures/members-plan.json', import.meta.url), 'utf8');
+  // The Darwin fixture is the Go planner's version 3 output for an empty host
+  // and two harness accounts. Keep the Linux v1 fixture for existing plans.
+  const filename = platform === 'darwin' ? 'members-plan-darwin.json' : 'members-plan.json';
+  const fixture = readFileSync(new URL(`./fixtures/${filename}`, import.meta.url), 'utf8');
   const saved = JSON.parse(fixture);
-  const plans = path.join(root, '.local', 'share', 'managed-machine', 'members', 'plans');
+  const dataHome = platform === 'darwin' ? path.join(root, 'Library', 'Application Support') : path.join(root, '.local', 'share');
+  const plans = path.join(dataHome, 'managed-machine', 'members', 'plans');
   mkdirSync(plans, { recursive: true });
   writeFileSync(path.join(plans, `${saved.plan_id}.json`), fixture);
   const approval = { plan_id: saved.plan_id, plan_digest: saved.plan_digest, approved_at: '2026-11-10T04:00:00Z', expires_at: '2026-11-10T04:10:00Z' };
   const fm = await fakeAgentMachine(root, { replies: { 'approve-members': { ok: true, state: 'approved', message: saved.plan_id, body: approval } } });
   pinDaemonPub({ env, home: root });
-  loadOrCreateMachineKey({ env, home: root });
+  const client = loadOrCreateMachineKey({ env, home: root });
   const writer = seedPrincipal(env, { label: 'w', souls: ['*'], operations: ['observe', 'approve'] });
   const viewer = seedPrincipal(env, { label: 'v', souls: ['*'], operations: ['observe'] });
   const scoped = seedPrincipal(env, { label: 's', souls: [AGENT_ID], operations: ['observe', 'approve'] });
@@ -2147,7 +2155,7 @@ test('approve-members: the saved plan becomes a proposal; only an approval sends
       hq_account: saved.plan.hq_account, dir: saved.plan.dir, members: saved.plan.members, steps: saved.plan.steps,
     });
     assert.equal(proposal.operationDigest, operationDigest(proposal.operation));
-    assert.match(proposal.summary, /abm-lead, abm-spec/);
+    assert.ok(proposal.summary.includes(saved.plan.members.join(', ')));
 
     // Deny: nothing is sent.
     await ui(`/ui/api/approvals/${proposal.proposalId}/decision`, { method: 'POST', body: { decision: 'deny', digest: proposal.operationDigest }, cookie: w });
@@ -2155,7 +2163,7 @@ test('approve-members: the saved plan becomes a proposal; only an approval sends
     assert.equal(fm.received.length, 0);
 
     // A plan edited after planning cannot be proposed.
-    writeFileSync(path.join(plans, `${saved.plan_id}.json`), fixture.replace('(ABHQ_MEMBERS)', '(ALL)'));
+    writeFileSync(path.join(plans, `${saved.plan_id}.json`), fixture.replace(saved.plan.members[0], 'changed-member'));
     assert.equal((await propose({ plan_id: saved.plan_id })).status, 400);
     writeFileSync(path.join(plans, `${saved.plan_id}.json`), fixture);
 
@@ -2179,6 +2187,9 @@ test('approve-members: the saved plan becomes a proposal; only an approval sends
     assert.equal(sent.verb, 'approve-members');
     assert.equal(sent.plan_id, saved.plan_id);
     assert.equal(sent.plan_digest, saved.plan_digest);
+    assert.equal(sent.public_key, client.publicKeyRaw.toString('base64'));
+    const publicKey = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: client.publicKeyRaw.toString('base64url') }, format: 'jwk' });
+    assert.ok(amVerify(null, requestCanonical(sent), publicKey, Buffer.from(sent.signature, 'base64')));
 
     // The card lists steps and file content line by line.
     const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
@@ -2187,5 +2198,5 @@ test('approve-members: the saved plan becomes a proposal; only an approval sends
     // The approved card leaves the list, so the page shows the result and the command to run.
     assert.match(app, /approvals-result/);
     assert.match(app, /outcome\.result\.next/);
-  }, { home: root });
-});
+  }, { home: root, webDeps: { platform } });
+}

@@ -231,6 +231,7 @@ const webRootDirectoryRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export function createWebLayer({
   env = process.env,
+  platform = process.platform,
   home = homedir(),
   config,
   interaction,
@@ -562,7 +563,7 @@ const enrollChildren = new Set();
       // The saved member accounts plans (#1401). Each is verified against
       // its own digest on read; one that fails is listed with the reason.
       requireMachineView(principal);
-      sendJson(res, 200, { plans: listMembersPlans({ home }) });
+      sendJson(res, 200, { plans: listMembersPlans({ home, platform }) });
       return;
     }
     if (req.method === 'POST' && pathname === '/ui/api/machine/agent-machine/proposals') {
@@ -580,7 +581,7 @@ const enrollChildren = new Set();
           throw failure(400, 'plan_digest must be a sha-256 digest');
         }
         let saved;
-        try { saved = readMembersPlan({ home, planId: body.plan_id }); }
+        try { saved = readMembersPlan({ home, platform, planId: body.plan_id }); }
         catch (error) { throw failure(error?.code === 'members-plan-missing' ? 404 : 400, error?.message ?? 'the saved plan cannot be read'); }
         if (body.plan_digest !== undefined && body.plan_digest !== saved.plan_digest) {
           throw failure(409, 'the saved plan has another digest; it was planned again');
