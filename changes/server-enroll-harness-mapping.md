@@ -1,0 +1,1 @@
+- `agent-bot server enroll` resolves `--harness` and `--add-harness` names to their configured GitHub App slugs before requesting device approval (#1424).

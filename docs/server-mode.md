@@ -23,7 +23,7 @@ The environment wins over config. The URL must be `https` (plain `http` is accep
 ## Commands
 
 ```sh
-agent-bot server enroll --harness grok [--harness claude] [--add-harness <name>] [--replace-harnesses] [--name "owner MBP"] [--platform macos] [--tag laptop] [--force] [--json]
+agent-bot server enroll [--harness <name-or-app-slug>]... [--add-harness <name-or-app-slug>]... [--all-configured] [--replace-harnesses] [--features <list>] [--name <device>] [--platform <platform>] [--tag <tag>]... [--force] [--json]
 agent-bot server status [--json]
 agent-bot server logout [--local-only] [--json]
 agent-bot server reconcile [--json]
@@ -32,12 +32,19 @@ agent-bot server reconcile [--json]
 - **enroll**, interactive: uses the device grant (RFC 8628). It prints a link, a user code and the device key thumbprint. Approve it on the server's `/device` page, after checking the thumbprint matches.
 - **enroll**, headless: when `AGENT_BOT_ENROLL_TOKEN` is set (cloud VMs, CI), it calls `/oauth/device_enroll` with the token instead. No browser is involved. The server sets the harnesses and lifetime (`--add-harness` and `--replace-harnesses` cannot be used with `AGENT_BOT_ENROLL_TOKEN`).
 - **`--force`** replaces the device key and `device.json` for an already-enrolled machine. On the same server origin, existing enrolled harnesses are preserved and unioned with any new `--harness` / `--add-harness` entries unless `--replace-harnesses` is passed; `--add-harness <name>` implies `--force`. The new enrollment is staged until the grant is approved — an expired or denied code leaves the existing enrollment, the `actions/` ledger and `event-cursors.json` untouched. When the device id changes, the old id's cursors are moved to `event-cursors.<old-id>.json`, never deleted.
-- `--harness` defaults to `AGENT_BOT_SERVER_HARNESS`, or to `grok` when `GROK_AGENT=1`.
+- Without explicit scope flags, enrollment uses the existing server harness from `AGENT_BOT_SERVER_HARNESS`, or `grok` when `GROK_AGENT=1`.
 - **status** shows the local enrollment, then makes a signed `whoami` round trip. It exits 1 when the round trip fails.
 - **logout** unenrolls the device. It calls `POST /api/daemon/revoke` on the server the device enrolled with (even when `AGENT_BOT_SERVER` is unset now), which deletes the device record there and stops every token it holds, then deletes the local device key, device record and pinned key. A device the server already revoked or expired counts as done. If the server cannot be reached, or the local device record is unreadable so the server cannot be named, the local files are still removed and logout exits 1: revoke the device on `/devices` then. `--local-only` skips the server and only removes the local files.
-- **`--harness` takes the App slug** the server knows the App by (for example `trueline-claude-agent`), not the harness name.
+- For a browser grant, `--harness` and `--add-harness` accept a mapped harness name (for example `claude` or `claude-code`) or a full App slug (for example `trueline-claude-agent`). An unknown short name reports the available mappings before starting enrollment.
 - **reconcile** settles credential requests whose outcome went missing, by lookup only (see [Unknown outcomes](#unknown-outcomes)). It exits 1 while any is still unknown.
 - **Approve only the identities the machine needs.** The device can mint only for the harnesses the owner approves at enrollment, and the server enforces that.
+
+For example, with a configured Claude mapping, enroll the device for that App and then add a second App by its full slug:
+
+```sh
+agent-bot server enroll --harness claude
+agent-bot server enroll --add-harness trueline-codex-agent
+```
 
 ## What is stored
 
