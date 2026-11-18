@@ -9,6 +9,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { assertOwnerAction } from '../owner-action.mjs';
+import { machineOwnerPresence } from '../identity-cli.mjs';
 import {
   AGENT_MACHINE_DIR, buildRequest, machineCall, machineSocketPath,
   loadOrCreateMachineKey, loadMachinePublicKey, pairedPublicKey, pinDaemonPub, verifyResponse,
@@ -18,6 +19,8 @@ import {
 const USAGE = `usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
+  owner-public-key             print the protected macOS owner approval public key as JSON
+  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired`;
 
@@ -35,12 +38,24 @@ export async function runMachineCli(argv = process.argv.slice(2), {
   stdout = process.stdout,
   stderr = process.stderr,
   gate = assertOwnerAction,
+  ownerPresence = machineOwnerPresence,
   socketPath,
   connectImpl,
 } = {}) {
   const [command, ...rest] = argv;
   if (command === '--help' || command === '-h' || rest.includes('--help') || rest.includes('-h')) {
     stdout.write(`${USAGE}\n`);
+    return 0;
+  }
+  if (command === 'owner-public-key' || command === 'approve-pairing') {
+    if (rest.length) {
+      stderr.write(`${USAGE}\n`);
+      return 1;
+    }
+    const reply = await gate(`machine-${command}`, {
+      env, consent: () => ownerPresence(command, { env, home }),
+    });
+    stdout.write(reply.trimEnd() + '\n');
     return 0;
   }
   if (command === 'pair') {

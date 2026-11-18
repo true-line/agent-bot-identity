@@ -18,6 +18,7 @@ export { identityAppFailure, identityAppsCommand } from './identity-apps.mjs';
 export { probeInboxReachability } from './inbox-probe.mjs';
 export { inspectConfiguredCodexDesktopGh, inspectShellGhShim, installGhShim, resolveGhWord } from './install-gh-shim.mjs';
 export { keydStatus, keydVersionAction } from './keyd-client.mjs';
+export { machineOwnerPresence } from './machine-owner-presence.mjs';
 export { soulMarkers } from './owner-gate.mjs';
 export { attestedOwnerKeys, keydAttestPins, keydStatementStore } from './owner-presence.mjs';
 export { extractToken, ownerCommand } from './owner-statement.mjs';

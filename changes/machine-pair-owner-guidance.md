@@ -1,0 +1,1 @@
+- Add a separate macOS owner approval app and CLI commands for signing a Machine pairing challenge with a Secure Enclave key. The CLI checks the provisioned app before use and keeps the credential helper out of the standard account's protected pairing instructions (#1315).

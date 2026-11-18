@@ -900,7 +900,30 @@ The population bearer alone cannot approve a revision.
 
 ### agent-machine client (#1254)
 
-When the host runs `managed-machine`'s agent-machine daemon, the owner pairs
+On protected macOS, Machine holds host credentials in the admin account.
+HQ pairs from its own account. The daily user's account approves the exact
+HQ and Machine keys with Touch ID or the login password.
+
+The following owner commands require a separately released, provisioned
+Developer ID app at `/Applications/AgentBotOwnerPresence.app` and the
+organization's exact Team ID in `settings.keydTeamId`. The CLI verifies the
+app and its executable before invoking them. Each installation must keep the
+app and its parent directories outside the daily user's write access.
+
+- `agent-bot machine owner-public-key` prints the owner's Secure Enclave
+  public key as JSON, creating it on first use. Give the independently
+  verified public key to the admin who pins it in Machine.
+- `agent-bot machine approve-pairing < challenge.json > proof.json` takes a
+  fresh challenge issued by Machine. Compare **both** fingerprints in the
+  native prompt with the intended Machine and HQ before approving. Give
+  the proof to the admin to complete enrollment. A refusal produces no proof.
+
+Packaging the separate approval app requires a matching Developer ID
+provisioning profile and a Keychain access group for its application
+identifier. Physical Mac qualification includes running the signed app,
+verifying its proof in Machine and completing a signed HQ request.
+
+For existing account-local setups, the owner pairs
 this account's agent-daemon with it once: `agent-bot pair` (`agent-bot machine pair`, owner
 action) writes `peers/agent-daemon.next` + `.confirm` under
 `~/.config/agent-machine/` and pins `daemon.pub` in agent-bot state; a key
