@@ -8,9 +8,9 @@ const notice = () => ({ message_id: 'review:client-prep', provenance: ['external
 const reply = (query, notices = [notice()]) => ({ contract: 'hq/v1', request_id: query.request_id,
   operation: 'consume-one', required_capabilities: ['notices-v1'], notices });
 
-// These are validation/transport test doubles, not replacement schemas.
-// Reviewed shared-schema/corpus validation is a separate provisional check;
-// the real release pin and supported member transport remain prerequisites.
+// These doubles exercise the client adapter. The installed MCP gate in
+// tests/integration/hq-inbox-release-gate.test.mjs uses the reviewed HQ SDK
+// and verifies the genuine pinned soul-contracts v0.5.0 schemas.
 function fixture(overrides = {}) {
   const calls = [];
   const options = {

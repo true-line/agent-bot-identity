@@ -36,7 +36,7 @@ test('installed existing MCP command inherits real Soul binding and consumes dur
   const { DEFAULT_CONTRACTS_DIRECTORY } = await load(soulsRoot, 'lib/contracts.mjs');
   const runtimeContracts = await prepareContracts({ directory: DEFAULT_CONTRACTS_DIRECTORY });
   const schemas = Object.fromEntries(['notice-query', 'notice-result'].map((name) => [name, JSON.parse(readFileSync(join(contracts.directory, 'schemas/hq/v1', `${name}.schema.json`)))]));
-  const home = mkdtempSync(join(tmpdir(), 'hq-installed-')); let hq; let soul;
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'hq-installed-'))); let hq; let soul;
   try {
     const artifact = join(home, 'runtime');
     cpSync(ROOT, artifact, { recursive: true, filter: (path) => {
