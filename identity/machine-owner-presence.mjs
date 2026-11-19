@@ -1,3 +1,4 @@
+import { parseStrict } from './vendor/agent-bot-sdk/wire/strict-json.mjs';
 import { execFile, execFileSync } from 'node:child_process';
 import { accessSync, constants, lstatSync } from 'node:fs';
 import { promisify } from 'node:util';
@@ -69,8 +70,8 @@ function verifiedInstallation({ env, home, exec, checkPath }) {
 // Web approval waits on an asynchronous child so the owner can log out and
 // other daemon requests continue while the macOS presence prompt is open.
 const execAsync = promisify(execFile);
-async function signFirstHQ(input, options) {
-  const child = execAsync(PROGRAM, ['approve-first-hq'], { ...options, encoding: 'utf8', timeout: 150000, maxBuffer: 8192 });
+async function signChallenge(command, input, options) {
+  const child = execAsync(PROGRAM, [command], { ...options, encoding: 'utf8', timeout: 150000, maxBuffer: 8192 });
   // A helper that refuses early may close stdin before the write finishes.
   child.child.stdin.on('error', () => {});
   child.child.stdin.end(input);
@@ -79,9 +80,20 @@ async function signFirstHQ(input, options) {
 
 export async function approveFirstHQ(challenge, {
   env, home, platform = process.platform, exec = execFileSync, checkPath = checkInstallPath,
-  sign = signFirstHQ, signal,
+  sign = (input, options) => signChallenge('approve-first-hq', input, options), signal,
 } = {}) {
   if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
   const options = verifiedInstallation({ env, home, exec, checkPath });
   return sign(JSON.stringify(challenge), { ...options, signal });
+}
+
+// A separate native purpose for an already enrolled role's verified service.
+export async function approveHQServiceRecovery(challenge, { env, home, platform = process.platform, signal } = {}) {
+  if (platform !== 'darwin') throw new Error('HQ service recovery requires macOS');
+  const options = verifiedInstallation({ env, home, exec: execFileSync, checkPath: checkInstallPath });
+  return signChallenge('approve-hq-service-recovery', JSON.stringify(challenge), { ...options, signal });
+}
+
+export function parseMachineHandoffJSON(text) {
+  return parseStrict(text, { maxDepth: 12 });
 }

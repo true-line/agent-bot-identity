@@ -44,9 +44,13 @@ export function firstHQSignedBytes(challenge) {
 }
 
 export function verifiedFirstHQProof(challenge, output) {
+  return verifyMachineOwnerProof(firstHQSignedBytes(challenge), output);
+}
+
+export function verifyMachineOwnerProof(bytes, output, expectedKey) {
   if (typeof output !== 'string' || Buffer.byteLength(output) > 1024) throw new Error('Invalid owner proof.');
   const proof = JSON.parse(output);
-  if (!fieldsAre(proof, ['public_key', 'signature']) || typeof proof.public_key !== 'string' || typeof proof.signature !== 'string') {
+  if ((expectedKey !== undefined && proof?.public_key !== expectedKey) || !fieldsAre(proof, ['public_key', 'signature']) || typeof proof.public_key !== 'string' || typeof proof.signature !== 'string') {
     throw new Error('Invalid owner proof.');
   }
   const point = Buffer.from(proof.public_key, 'base64');
@@ -55,6 +59,6 @@ export function verifiedFirstHQProof(challenge, output) {
     || signature.length > 72 || signature.toString('base64') !== proof.signature) throw new Error('Invalid owner proof.');
   const key = createPublicKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256',
     x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url') } });
-  if (!verify('sha256', firstHQSignedBytes(challenge), key, signature)) throw new Error('Invalid owner proof.');
+  if (!verify('sha256', bytes, key, signature)) throw new Error('Invalid owner proof.');
   return proof;
 }
