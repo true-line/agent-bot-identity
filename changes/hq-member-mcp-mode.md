@@ -1,1 +1,0 @@
-- Prepare the existing MCP inbox command to use the supported HQ SDK query capability from inherited Soul member inputs, with lazy standalone compatibility and no fallback or consume replay. The genuine shared-release pin, cancellable bootstrap and positive installed-process acceptance remain pending; no production activation is claimed (#1444).
