@@ -904,54 +904,26 @@ On protected macOS, Machine holds host credentials in the admin account.
 HQ pairs from its own account. The daily user's account approves the exact
 HQ and Machine keys with Touch ID or the login password.
 
-The following owner commands require a separately released, provisioned
-Developer ID app at `/Applications/AgentBotOwnerPresence.app` and the
-organization's exact Team ID in `settings.keydTeamId`. The CLI verifies the
-app and its executable before invoking them. Each installation must keep the
-app and its parent directories outside the daily user's write access.
+Machine owner operations require an authorized unbundled provider in the
+signed-in owner's session. This Identity version has no authorized provider.
+Continue using any existing pairing and keep the owner public key pinned in
+Machine. New owner approvals must wait for a compatible provider.
 
-- `agent-bot machine owner-public-key` prints the owner's Secure Enclave
-  public key as JSON, creating it on first use. Give the independently
-  verified public key to the admin who pins it in Machine.
-- `agent-bot machine approve-pairing < challenge.json > proof.json` takes a
-  fresh challenge issued by Machine. Compare **both** fingerprints in the
-  native prompt with the intended Machine and HQ before approving. Give
-  the proof to the admin to complete enrollment. A refusal produces no proof.
+- `agent-bot machine owner-public-key` requires independent access to the
+  owner's existing Secure Enclave P-256 public key.
+- `agent-bot machine approve-pairing < challenge.json` requires fresh local
+  consent for the exact pairing challenge and signs its purpose-specific
+  transcript with the corresponding nonexportable owner key.
+- `agent-bot machine review-first-hq FILE` opens the local one-time review
+  before the daily daemon or HQ has been paired. Compare the Machine
+  fingerprint with the one supplied independently by the administrator,
+  then check the plan digest, steps and any LaunchDaemon content. A public
+  proof also requires the protected owner operation. Closing the page,
+  discarding the review or reaching expiry ends the session.
 
-Packaging the separate approval app requires a matching Developer ID
-provisioning profile and a Keychain access group for its application
-identifier. Physical Mac qualification includes running the signed app,
-verifying its proof in Machine and completing a signed HQ request.
-
-For a first HQ account, the administrator transfers the JSON challenge exported
-by Machine. From the signed-in daily owner's terminal, run:
-
-```sh
-agent-bot machine review-first-hq /path/to/first-hq-challenge.json
-```
-
-The daily account needs the Identity CLI and the installed, notarized
-qualification signer that supports this operation. Both must come from the
-version under test. With a verified Identity checkout and Node 20 or newer,
-use its absolute `/path/to/agent-bot` launcher from the daily owner's
-ordinary terminal directory. Configure the organization's exact
-`settings.keydTeamId` in that account and have the administrator independently
-pin the owner's public key in Machine before exporting a challenge.
-
-The command opens a short-lived local Approvals page for the imported plan.
-It works before a daily daemon, web principal or HQ pairing exists.
-Closing the page, discarding the review or reaching expiry ends the session.
-Owners with an existing machine-wide approving web principal may also import
-the file in the running daemon's direct local **Approvals** tab.
-
-Compare the Machine SHA-256 fingerprint with the one
-obtained independently from the administrator, then review the plan digest
-and every step, including any LaunchDaemon content. Choose **Approve with
-owner presence** and check the same fingerprint and digest in the Mac prompt.
-Return the resulting public proof to the administrator for Machine to verify.
-The two-minute challenge can be replaced by the administrator if it expires.
-This private qualification path requires the provisioned owner app with the
-first-HQ operation. HQ pairing is a separate approval after provisioning.
+Issuing a new key or changing the Machine pin requires a separate owner
+decision. The regular Identity/keyd presence checks serve their existing
+operations.
 
 For existing account-local setups, the owner pairs
 this account's agent-daemon with it once: `agent-bot pair` (`agent-bot machine pair`, owner

@@ -402,9 +402,9 @@ stdout:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
@@ -420,9 +420,9 @@ stderr:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
@@ -553,9 +553,9 @@ stdout:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
@@ -571,9 +571,9 @@ stderr:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
@@ -1025,9 +1025,9 @@ stdout:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
@@ -1043,9 +1043,9 @@ stderr:
 usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  owner-public-key             protected macOS owner public key (provider unavailable in this version)
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve a Machine pairing challenge (provider unavailable in this version)
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired
