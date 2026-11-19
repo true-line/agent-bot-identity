@@ -2,10 +2,11 @@
 // signature. No daemon, permanent token, principal store, or general UI API.
 import { execFile } from 'node:child_process';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { closeSync, constants, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { promisify } from 'node:util';
 import { approveFirstHQ } from './identity-host.mjs';
+import { readMachineChallengeText } from './machine-challenge-file.mjs';
 import { reviewFirstHQ, verifiedFirstHQProof } from './machine-first-hq.mjs';
 
 const assets = new Map([
@@ -27,30 +28,13 @@ function matches(value, expected) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function readChallenge(file) {
-  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const limit = 64 * 1024;
-    const info = fstatSync(fd);
-    if (!info.isFile() || info.size > limit) throw new Error('Expected a regular challenge file of at most 64 KiB.');
-    const bytes = Buffer.alloc(limit + 1);
-    let size = 0;
-    while (size <= limit) {
-      const read = readSync(fd, bytes, size, bytes.length - size, null);
-      if (!read) break;
-      size += read;
-    }
-    if (size > limit) throw new Error('The challenge exceeds 64 KiB.');
-    return JSON.parse(bytes.subarray(0, size).toString('utf8'));
-  } finally { closeSync(fd); }
-}
 
 export async function openFirstHQReview(file, {
   env, home, platform = process.platform, now = () => Math.floor(Date.now() / 1000),
   signer = approveFirstHQ, openBrowser = (url) => promisify(execFile)('/usr/bin/open', [url]),
 } = {}) {
   if (platform !== 'darwin') throw new Error('First-HQ provisioning requires macOS.');
-  const challenge = readChallenge(file);
+  const challenge = JSON.parse(readMachineChallengeText(file));
   const review = reviewFirstHQ(challenge, now());
   const launch = token();
   let session;

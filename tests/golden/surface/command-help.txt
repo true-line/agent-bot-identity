@@ -403,6 +403,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -421,6 +423,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -554,6 +558,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -572,6 +578,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -1026,6 +1034,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -1044,6 +1054,8 @@ usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor

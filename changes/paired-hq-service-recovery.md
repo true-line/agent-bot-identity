@@ -1,0 +1,1 @@
+The macOS owner can review a Machine-signed service repair from the paired HQ role in a local terminal and return one hardware-backed proof.

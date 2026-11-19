@@ -59,7 +59,7 @@ const LAUNCH_PATHS = {
   'keyd-supervisor.mjs': [1, 'OS tool: launchctl'],
   'identity/owner-approval.mjs': [1, 'OS tool: osascript'],
   'machine-first-hq-review.mjs': [1, 'owner-run: open the one-time loopback review in the default browser via /usr/bin/open'],
-  'identity/machine-owner-presence.mjs': [3, 'owner-run: fixed codesign and spctl tools, then the verified owner approval app, under HOME and a fixed PATH'],
+  'identity/machine-owner-presence.mjs': [4, 'owner-run: fixed codesign and spctl tools, then the verified owner approval app, under HOME and a fixed PATH'],
   'identity/owner-presence.mjs': [2, 'OS tool: codesign, then the verified keyd binary'],
   'detect-harness.mjs': [3, 'OS tool: ps and codesign'],
   'process-ownership.mjs': [1, 'OS tool: ps'],
