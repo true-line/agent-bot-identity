@@ -118,18 +118,7 @@ jobs:
         with:
           node-version: 20
       - name: Run the repository validation contract
-        shell: bash
-        run: |
-          log="$RUNNER_TEMP/identity-npm-test.log"
-          if npm test >"$log" 2>&1; then
-            cat "$log"
-          else
-            # Emit failure names before the full TAP log so they remain visible
-            # to clients that bound log downloads. Keep the suite exit failing.
-            awk '/^not ok / { print }' "$log"
-            cat "$log"
-            exit 1
-          fi
+        run: npm test
       - name: Run installed HQ inbox compatibility acceptance
         run: node --test tests/integration/hq-inbox-release-gate.test.mjs
 
