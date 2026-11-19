@@ -161,6 +161,8 @@ jobs:
         run: node --test --test-name-pattern="^machine attest" tests/machine-client.test.mjs
       - name: Run the owner-decision journal tests on Darwin
         run: node --test tests/owner-decision-journal*.test.mjs
+      - name: Smoke test the packaged Homebrew owner review commands
+        run: bash tests/integration/homebrew-owner-review.sh
       - name: Build the macOS owner approval app and test the pairing challenge
         run: sh owner-presence-macos/tests/hosted.sh
 
@@ -227,7 +229,7 @@ jobs:
           pkg="$RUNNER_TEMP/pkg"
           mkdir -p "$pkg/src" "$pkg/libexec"
           git archive HEAD | tar -x -C "$pkg/src"
-          rm -rf "$pkg/src/tests" "$pkg/src/tools" "$pkg/src/governance" "$pkg/src/Formula"
+          rm -rf "$pkg/src/tests" "$pkg/src/tools" "$pkg/src/governance" "$pkg/src/keyd" "$pkg/src/Formula"
           cp -R "$pkg/src/"* "$pkg/libexec/"
       - uses: true-line/trueline-agent-ci/.github/actions/cli-skill-gate@8ec38da39c9b43af2181d1f5e5b7e09226c0bfad
         with:
