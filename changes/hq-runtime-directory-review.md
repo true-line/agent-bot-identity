@@ -1,0 +1,1 @@
+- HQ service recovery now reviews the planned macOS runtime directory. First-HQ setup displays the directory alongside the LaunchDaemon.

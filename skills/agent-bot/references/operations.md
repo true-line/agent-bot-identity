@@ -35,6 +35,14 @@ the installed owner app. Return the resulting public proof to the administrator.
 The review closes after use or expiry. This entry point needs no existing web
 principal or HQ pairing.
 
+On an already paired Mac with the HQ service down, the dedicated HQ CLI
+exports the signed service-repair challenge. The daily owner opens a normal
+local terminal and runs `agent-bot machine review-hq-service-recovery FILE
+--machine-fingerprint SHA256` with the independently established Machine
+fingerprint. The exact plan is displayed on the terminal. A successful
+presence check emits the public proof to standard output. Return that proof
+and the original challenge to the paired HQ CLI before expiry.
+
 ## Attest an existing local machine pairing
 
 When Harbor reports `pairing_required`, the owner can check `agent-bot machine status`

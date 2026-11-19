@@ -971,6 +971,23 @@ local status exchange bound to a single-use Harbor challenge. Repeating the
 command verifies the recorded key IDs. It refuses revoked or conflicting
 pairings. The owner can inspect the result on Harbor's `/devices/manage`.
 
+For a paired Mac whose HQ service is unavailable, the dedicated HQ CLI can
+export a Machine-signed service-repair challenge. Obtain the expected Machine
+SHA-256 fingerprint independently from the prefix administrator. In the daily
+owner's local terminal, use a fresh destination for the public proof.
+
+```sh
+umask 077
+agent-bot machine review-hq-service-recovery challenge.json --machine-fingerprint "$machine_fingerprint" > owner-proof.json
+```
+
+Review the service owner, release paths, digests and launch configuration.
+Type `approve` to request the native presence prompt, or press Return to
+discard. Return a successful proof to the paired HQ CLI with the original
+challenge. Machine checks the approval and the administrator separately runs
+the existing root apply. The review runs entirely in the terminal and opens
+no listener. Preserve the existing owner key and role pairing across repairs.
+
 ### MCP server: bind a conversation to its identity
 
 `agent-bot mcp` serves the sanctioned agent-bot MCP tools over stdio, so any

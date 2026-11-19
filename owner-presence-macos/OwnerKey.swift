@@ -82,6 +82,7 @@ struct OwnerKey {
         context.touchIDAuthenticationAllowableReuseDuration = 0
         context.localizedReason = request.approvalReason
         guard let key = try load(context: context) else { throw PresenceFailure.missingKey }
+        try request.checkOwnerKey(key.publicKey.x963Representation)
         guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: request.approvalReason)
         else { throw PresenceFailure.declined }
         try request.checkExpiry(now: Int64(Date().timeIntervalSince1970))

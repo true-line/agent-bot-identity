@@ -10,6 +10,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { assertOwnerAction } from '../owner-action.mjs';
+import { reviewHQServiceRecovery } from '../machine-service-recovery.mjs';
 import { openFirstHQReview } from '../machine-first-hq-review.mjs';
 import { machineOwnerPresence, ServerSession } from '../identity-cli.mjs';
 import {
@@ -22,6 +23,8 @@ const USAGE = `usage: agent-bot machine <command> | agent-bot pair [--repin] | a
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-hq-service-recovery FILE --machine-fingerprint SHA256
+                             review one paired HQ service repair and print its owner proof
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
@@ -97,6 +100,7 @@ export async function runMachineCli(argv = process.argv.slice(2), {
   gate = assertOwnerAction,
   ownerPresence = machineOwnerPresence,
   firstHQReview = openFirstHQReview,
+  recoveryReview = reviewHQServiceRecovery,
   socketPath,
   connectImpl,
   session,
@@ -104,6 +108,22 @@ export async function runMachineCli(argv = process.argv.slice(2), {
   const [command, ...rest] = argv;
   if (command === '--help' || command === '-h' || rest.includes('--help') || rest.includes('-h')) {
     stdout.write(`${USAGE}\n`);
+    return 0;
+  }
+  if (command === 'review-hq-service-recovery') {
+    if (rest.length !== 3 || rest[1] !== '--machine-fingerprint' || !rest[0] || rest[0].startsWith('-')) {
+      stderr.write(USAGE + '\n');
+      return 1;
+    }
+    let proof;
+    await gate('machine-review-hq-service-recovery', {
+      env, consent: async () => {
+        proof = await recoveryReview(rest[0], rest[2], { env, home, display: stderr });
+        return proof;
+      },
+    });
+    if (!proof) { stderr.write('Service repair discarded.\n'); return 1; }
+    stdout.write(JSON.stringify(proof) + '\n');
     return 0;
   }
   if (command === 'review-first-hq') {
