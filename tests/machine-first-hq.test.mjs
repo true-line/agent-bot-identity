@@ -105,3 +105,39 @@ test('fresh first-HQ CLI review is local, single-use and ends on direct browser 
   assert.deepEqual(readdirSync(home).sort(), ['config.json', 'transfer.json']);
   assert.deepEqual(JSON.parse(readFileSync(file)), transfer);
 });
+
+test('closing the one-shot review revokes an outstanding signer before any proof response', async (t) => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { openFirstHQReview } = await import('../machine-first-hq-review.mjs');
+  const home = mkdtempSync(join(tmpdir(), 'first-hq-cancel-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const file = join(home, 'transfer.json');
+  writeFileSync(file, JSON.stringify(transfer));
+  let show, prompting;
+  const page = new Promise((resolve) => { show = resolve; });
+  const prompt = new Promise((resolve) => { prompting = resolve; });
+  const done = openFirstHQReview(file, {
+    home, platform: 'darwin', now: () => 1000,
+    openBrowser: (url) => show(new URL(url)),
+    signer: async (_, { signal }) => {
+      prompting();
+      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+      throw new Error('canceled');
+    },
+  });
+  const url = await page;
+  const post = (verb, token, body) => fetch(new URL(verb, url), {
+    method: 'POST', headers: { authorization: 'Bearer ' + token, origin: url.origin, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const { session } = await (await post('claim', url.hash.slice(1), {})).json();
+  const approved = post('approve', session, { plan_digest: transfer.plan_digest }).then((res) => res.status, () => 0);
+  await prompt;
+  const replay = await post('approve', session, { plan_digest: transfer.plan_digest });
+  assert.equal(replay.status, 409);
+  assert.equal((await post('close', session, {})).status, 200);
+  assert.equal(await done, 'discarded');
+  assert.notEqual(await approved, 200);
+});
