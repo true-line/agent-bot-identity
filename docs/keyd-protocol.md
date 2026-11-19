@@ -21,6 +21,14 @@ behaviour it says so; the Rust tests under `keyd/` cover that side, and the
 Node suite does not. For key custody and the socket layout see
 [soul credentials](soul-credentials.md#agent-bot-keyd-397).
 
+## MCP initialization
+
+On the soul socket, keyd supports MCP revisions `2025-03-26` and
+`2025-06-18`. An `initialize` request for either revision receives that
+revision. For an unknown, omitted, or non-string `protocolVersion`, keyd
+returns `2025-06-18`. A client that cannot use the returned revision should
+disconnect. [MCP version negotiation](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#version-negotiation).
+
 ## Trust boundary
 
 keyd holds the keys and signs; agent-bot keeps the policy. Two Ed25519 keys
