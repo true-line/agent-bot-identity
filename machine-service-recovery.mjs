@@ -48,7 +48,18 @@ export function verifyRecoveryEnvelope(line, trustedFingerprint, now = Date.now(
     throw new Error('This plan is outside recovery of the enrolled HQ service.');
   }
   const record = parseMachineHandoffJSON(service.content);
-  if (!keysAre(record, ['service', 'plist', 'owner_uid']) || !Number.isSafeInteger(record.owner_uid) || record.owner_uid < 1 ||
+  const recordFields = ['service', 'plist', 'owner_uid'];
+  if (record && Object.hasOwn(record, 'runtime_directory')) {
+    recordFields.push('runtime_directory');
+    const dir = record.runtime_directory;
+    if (!keysAre(dir, ['path', 'action', 'owner', 'group', 'mode'])
+      || dir.path !== '/Library/Application Support/ai.true-line.agent-bot-hq'
+      || dir.owner !== 'root' || dir.group !== 'wheel' || dir.mode !== '0755'
+      || !(dir.action === 'none' || (dir.action === 'create' && service.action === 'create'))) {
+      throw new Error('Invalid HQ runtime directory in the service plan.');
+    }
+  }
+  if (!keysAre(record, recordFields) || !Number.isSafeInteger(record.owner_uid) || record.owner_uid < 1 ||
     !keysAre(record.service, ['release_dir', 'artifact_sha256', 'node', 'node_sha256', 'archive']) ||
     ![record.service.artifact_sha256, record.service.node_sha256].every(hex) ||
     ![record.service.release_dir, record.service.node, record.service.archive].every((s) => typeof s === 'string' && s.startsWith('/')) ||

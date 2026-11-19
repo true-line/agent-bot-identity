@@ -27,6 +27,7 @@ export function showFirstHQReview(box, review, settle, setBusy = () => {}) {
       try { record = JSON.parse(step.content); } catch { /* show exact content below */ }
       if (typeof record?.plist === 'string') {
         item.append(text('h4', 'LaunchDaemon property list'), text('pre', record.plist));
+        if (record.runtime_directory) item.append(text('h4', 'HQ runtime directory'), text('pre', JSON.stringify(record.runtime_directory, null, 2)));
         if (record.service) item.append(text('h4', 'Service release'), text('pre', JSON.stringify(record.service, null, 2)));
         if (record.owner_uid !== undefined) item.append(text('p', 'Service owner UID: ' + record.owner_uid));
       } else item.append(text('h4', 'Content'), text('pre', step.content));

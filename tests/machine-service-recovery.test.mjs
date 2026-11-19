@@ -46,6 +46,28 @@ test('recovery review binds the original signed response, trusted Machine and cu
   }
   assert.throws(() => verifyRecoveryEnvelope(envelope({ ...c, action: 'first-hq-provision' }), fingerprint, now));
 });
+test('recovery review checks the exact HQ runtime directory operation', () => {
+  const dir = { path: '/Library/Application Support/ai.true-line.agent-bot-hq', action: 'create', owner: 'root', group: 'wheel', mode: '0755' };
+  function review(runtimeDirectory, serviceAction = 'create') {
+    const c = challenge();
+    const plan = JSON.parse(c.plan_canonical);
+    const step = plan.steps[1];
+    step.action = serviceAction;
+    step.content = JSON.stringify({ ...JSON.parse(step.content), runtime_directory: runtimeDirectory });
+    c.plan_canonical = membersPlanCanonical(plan);
+    c.plan_digest = sha(c.plan_canonical);
+    return verifyRecoveryEnvelope(envelope(c), fingerprint, now).record.runtime_directory;
+  }
+  assert.deepEqual(review(dir), dir);
+  const existing = { ...dir, action: 'none' };
+  for (const action of ['create', 'write']) assert.deepEqual(review(existing, action), existing);
+  assert.throws(() => review(dir, 'write'), /Invalid HQ runtime directory/);
+  for (const invalid of [null, { ...dir, path: '/Library' }, { ...dir, action: 'delete' },
+    { ...dir, owner: 'operator' }, { ...dir, group: 'staff' }, { ...dir, mode: '0777' }, { ...dir, extra: 'field' }]) {
+    assert.throws(() => review(invalid), /Invalid HQ runtime directory/);
+  }
+});
+
 test('local terminal displays full plan and obtains a purpose-bound proof only after confirmation', async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'hq-service-review-'));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
