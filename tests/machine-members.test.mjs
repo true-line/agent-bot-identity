@@ -121,3 +121,17 @@ test('approve-members signs plan_id and plan_digest as agent-machine verifies th
   ];
   for (const fields of bad) assert.throws(() => buildRequest(fields, signer), /machine-field-invalid/, JSON.stringify(fields));
 });
+
+test('v0.12.4 empty macOS HQ plans retain their exact null digest and show an empty member list', () => {
+  const challenge = JSON.parse(readFileSync(new URL('./fixtures/first-hq-challenge.json', import.meta.url)));
+  const empty = JSON.parse(challenge.plan_canonical);
+  const plan = { ...empty, members: null };
+  const saved = { plan_id: PLAN_ID, plan_digest: membersPlanDigest(plan), plan };
+  assert.notEqual(saved.plan_digest, membersPlanDigest(empty));
+  assert.equal(saved.plan_digest, 'd4d7a3dcaec1f65ece827e8dd0fdaecb8a9a0aef239802f1dd1936db509c54cf');
+  const home = homeWith({ [PLAN_ID]: JSON.stringify(saved) });
+  assert.deepEqual(readMembersPlan({ home, planId: PLAN_ID }).plan.members, []);
+  assert.deepEqual(listMembersPlans({ home })[0].members, []);
+  assert.throws(() => membersPlanDigest({ ...SAVED.plan, members: null }));
+  assert.throws(() => membersPlanDigest({ ...empty, members: undefined }));
+});

@@ -8,11 +8,11 @@ enum PresenceFailure: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidChallenge: return "Invalid Machine pairing challenge."
-        case .expired: return "Machine pairing challenge expired."
+        case .invalidChallenge: return "Invalid Machine owner challenge."
+        case .expired: return "Machine owner challenge expired."
         case .unavailable: return "Secure Enclave owner approval is unavailable."
         case .unsigned: return "A provisioned Developer ID owner approval application is required."
-        case .missingKey: return "Create the owner public key before approving pairing."
+        case .missingKey: return "Create the owner public key before approving a Machine challenge."
         case .invalidKey: return "The enrolled owner key could not be used."
         case .declined: return "Owner approval was declined."
         case .keychain(let status): return "Owner Keychain operation failed (\(status))."
@@ -51,17 +51,17 @@ struct PairingChallenge: Decodable {
         Data("agent-bot-machine-owner/v1\n\(action)\n\(machine_key)\n\(hq_key)\n\(nonce)\n\(expires_at)\n".utf8)
     }
 
-    private func fingerprint(_ hex: String) -> String {
-        // The parser has already validated the 32 lowercase-hex octets.
-        let octets = Array(hex.utf8)
-        func value(_ c: UInt8) -> UInt8 { c <= 57 ? c - 48 : c - 87 }
-        let bytes = stride(from: 0, to: octets.count, by: 2).map {
-            (value(octets[$0]) << 4) | value(octets[$0 + 1])
-        }
-        return SHA256.hash(data: Data(bytes)).map { String(format: "%02x", $0) }.joined()
-    }
-
     var approvalReason: String {
-        "Pair HQ with Machine?\nMachine SHA-256: \(fingerprint(machine_key))\nHQ SHA-256: \(fingerprint(hq_key))"
+        "Pair HQ with Machine?\nMachine SHA-256: \(machineFingerprint(machine_key))\nHQ SHA-256: \(machineFingerprint(hq_key))"
     }
+}
+
+func machineFingerprint(_ hex: String) -> String {
+    // The parser has already validated the 32 lowercase-hex octets.
+    let octets = Array(hex.utf8)
+    func value(_ c: UInt8) -> UInt8 { c <= 57 ? c - 48 : c - 87 }
+    let bytes = stride(from: 0, to: octets.count, by: 2).map {
+        (value(octets[$0]) << 4) | value(octets[$0 + 1])
+    }
+    return SHA256.hash(data: Data(bytes)).map { String(format: "%02x", $0) }.joined()
 }

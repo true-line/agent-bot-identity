@@ -48,12 +48,18 @@ function canonicalPlan(plan) {
     if (!['version', 'hq_account', 'dir', 'members', 'steps'].includes(key)) throw refuse(`the plan has an unknown field ${key}`);
   }
   if (!Number.isInteger(plan.version) || plan.version < 1) throw refuse('the plan version is not a positive integer');
-  if (!Array.isArray(plan.members) || !Array.isArray(plan.steps)) throw refuse('the plan has no members or steps list');
+  // v0.12.4 serialized the empty slice of a dedicated macOS HQ-only plan as null.
+  const legacyEmpty = plan.members === null && plan.version === 3 && plan.hq_account === '_agent-bot-hq'
+    && plan.dir === 'none' && Array.isArray(plan.steps)
+    && plan.steps[0]?.kind === 'hq-account' && plan.steps[0].target === plan.hq_account
+    && (plan.steps.length === 1 || (plan.steps.length === 2 && plan.steps[1]?.kind === 'service'
+      && plan.steps[1].target === 'ai.true-line.agent-bot-hq'));
+  if ((!legacyEmpty && !Array.isArray(plan.members)) || !Array.isArray(plan.steps)) throw refuse('the plan has no members or steps list');
   return {
     version: plan.version,
     hq_account: plain(plan.hq_account, 'hq_account'),
     dir: plain(plan.dir, 'dir'),
-    members: plan.members.map((m) => plain(m, 'a member account')),
+    members: legacyEmpty ? null : plan.members.map((m) => plain(m, 'a member account')),
     steps: plan.steps.map((step) => {
       if (!step || typeof step !== 'object' || Array.isArray(step)) throw refuse('a step is not an object');
       for (const key of Object.keys(step)) if (!STEP_FIELDS.includes(key)) throw refuse(`a step has an unknown field ${key}`);
@@ -71,8 +77,12 @@ function canonicalPlan(plan) {
   };
 }
 
+export function membersPlanCanonical(plan) {
+  return `${JSON.stringify(canonicalPlan(plan))}\n`;
+}
+
 export function membersPlanDigest(plan) {
-  return createHash('sha256').update(`${JSON.stringify(canonicalPlan(plan))}\n`, 'utf8').digest('hex');
+  return createHash('sha256').update(membersPlanCanonical(plan), 'utf8').digest('hex');
 }
 
 // Read one saved plan. Returns the canonical plan and its verified digest.
@@ -93,7 +103,7 @@ export function readMembersPlan({ home = homedir(), platform = process.platform,
     plan_id: planId,
     plan_digest: digest,
     created_at: typeof saved.created_at === 'string' && PLAIN.test(saved.created_at) ? saved.created_at.slice(0, 32) : null,
-    plan,
+    plan: { ...plan, members: plan.members ?? [] },
   };
 }
 

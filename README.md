@@ -923,6 +923,36 @@ provisioning profile and a Keychain access group for its application
 identifier. Physical Mac qualification includes running the signed app,
 verifying its proof in Machine and completing a signed HQ request.
 
+For a first HQ account, the administrator transfers the JSON challenge exported
+by Machine. From the signed-in daily owner's terminal, run:
+
+```sh
+agent-bot machine review-first-hq /path/to/first-hq-challenge.json
+```
+
+The daily account needs the Identity CLI and the installed, notarized
+qualification signer that supports this operation. Both must come from the
+version under test. With a verified Identity checkout and Node 20 or newer,
+use its absolute `/path/to/agent-bot` launcher from the daily owner's
+ordinary terminal directory. Configure the organization's exact
+`settings.keydTeamId` in that account and have the administrator independently
+pin the owner's public key in Machine before exporting a challenge.
+
+The command opens a short-lived local Approvals page for the imported plan.
+It works before a daily daemon, web principal or HQ pairing exists.
+Closing the page, discarding the review or reaching expiry ends the session.
+Owners with an existing machine-wide approving web principal may also import
+the file in the running daemon's direct local **Approvals** tab.
+
+Compare the Machine SHA-256 fingerprint with the one
+obtained independently from the administrator, then review the plan digest
+and every step, including any LaunchDaemon content. Choose **Approve with
+owner presence** and check the same fingerprint and digest in the Mac prompt.
+Return the resulting public proof to the administrator for Machine to verify.
+The two-minute challenge can be replaced by the administrator if it expires.
+This private qualification path requires the provisioned owner app with the
+first-HQ operation. HQ pairing is a separate approval after provisioning.
+
 For existing account-local setups, the owner pairs
 this account's agent-daemon with it once: `agent-bot pair` (`agent-bot machine pair`, owner
 action) writes `peers/agent-daemon.next` + `.confirm` under

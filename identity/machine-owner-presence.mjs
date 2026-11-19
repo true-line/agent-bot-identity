@@ -1,5 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { accessSync, constants, lstatSync } from 'node:fs';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import process from 'node:process';
 import { ANY_DEVELOPER_ID, keydSignerSetting, loadConfig } from '../config.mjs';
@@ -37,6 +38,14 @@ export function machineOwnerPresence(command, {
   if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
   if (command !== 'owner-public-key' && command !== 'approve-pairing') throw new Error('unknown Machine owner operation');
   if (command === 'approve-pairing' && terminalInput) throw new Error('provide the Machine pairing challenge JSON on standard input');
+  const options = verifiedInstallation({ env, home, exec, checkPath });
+  return exec(PROGRAM, [command === 'owner-public-key' ? 'public-key' : command], {
+    ...options, stdio: [command === 'approve-pairing' ? 'inherit' : 'ignore', 'pipe', 'inherit'],
+    encoding: 'utf8', timeout: 150000, maxBuffer: 8192,
+  });
+}
+
+function verifiedInstallation({ env, home, exec, checkPath }) {
   const { teamId } = keydSignerSetting(loadConfig({ env, home }));
   if (!teamId || teamId === ANY_DEVELOPER_ID) throw new Error('Machine owner approval requires an exact settings.keydTeamId in the organization configuration');
   try {
@@ -54,8 +63,25 @@ export function machineOwnerPresence(command, {
   } catch (cause) {
     throw new Error('macOS could not verify the signed owner approval app', { cause });
   }
-  return exec(PROGRAM, [command === 'owner-public-key' ? 'public-key' : command], {
-    ...options, stdio: [command === 'approve-pairing' ? 'inherit' : 'ignore', 'pipe', 'inherit'],
-    encoding: 'utf8', timeout: 150000, maxBuffer: 8192,
-  });
+  return options;
+}
+
+// Web approval waits on an asynchronous child so the owner can log out and
+// other daemon requests continue while the macOS presence prompt is open.
+const execAsync = promisify(execFile);
+async function signFirstHQ(input, options) {
+  const child = execAsync(PROGRAM, ['approve-first-hq'], { ...options, encoding: 'utf8', timeout: 150000, maxBuffer: 8192 });
+  // A helper that refuses early may close stdin before the write finishes.
+  child.child.stdin.on('error', () => {});
+  child.child.stdin.end(input);
+  return (await child).stdout;
+}
+
+export async function approveFirstHQ(challenge, {
+  env, home, platform = process.platform, exec = execFileSync, checkPath = checkInstallPath,
+  sign = signFirstHQ, signal,
+} = {}) {
+  if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
+  const options = verifiedInstallation({ env, home, exec, checkPath });
+  return sign(JSON.stringify(challenge), { ...options, signal });
 }

@@ -173,6 +173,12 @@
     <h2>Approvals</h2>
     <p class="hint">Immutable operation proposals. Approving sends back the exact
     digest shown — a plain “yes” in a conversation can never authorize work.</p>
+    <div id="first-hq" hidden>
+      <h3>Provision the first HQ account</h3>
+      <label for="first-hq-file">Import the Machine challenge from your administrator</label>
+      <input id="first-hq-file" type="file" accept=".json,application/json">
+      <div id="first-hq-review" aria-live="polite"></div>
+    </div>
     <div id="approvals-result" class="proposal" hidden></div>
     <div id="approvals-list"></div>
   </section>

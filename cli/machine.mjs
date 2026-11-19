@@ -10,6 +10,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { assertOwnerAction } from '../owner-action.mjs';
+import { openFirstHQReview } from '../machine-first-hq-review.mjs';
 import { machineOwnerPresence, ServerSession } from '../identity-cli.mjs';
 import {
   AGENT_MACHINE_DIR, buildRequest, machineCall, machineSocketPath,
@@ -21,6 +22,7 @@ const USAGE = `usage: agent-bot machine <command> | agent-bot pair [--repin] | a
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
   owner-public-key             print the protected macOS owner approval public key as JSON
+  review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
   approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
@@ -94,6 +96,7 @@ export async function runMachineCli(argv = process.argv.slice(2), {
   stderr = process.stderr,
   gate = assertOwnerAction,
   ownerPresence = machineOwnerPresence,
+  firstHQReview = openFirstHQReview,
   socketPath,
   connectImpl,
   session,
@@ -102,6 +105,12 @@ export async function runMachineCli(argv = process.argv.slice(2), {
   if (command === '--help' || command === '-h' || rest.includes('--help') || rest.includes('-h')) {
     stdout.write(`${USAGE}\n`);
     return 0;
+  }
+  if (command === 'review-first-hq') {
+    if (rest.length !== 1 || !rest[0] || rest[0].startsWith('-')) { stderr.write(USAGE + '\n'); return 1; }
+    const result = await gate('machine-review-first-hq', { env, consent: () => firstHQReview(rest[0], { env, home }) });
+    stdout.write(`First-HQ review ${result}.\n`);
+    return result === 'approved' ? 0 : 1;
   }
   if (command === 'owner-public-key' || command === 'approve-pairing') {
     if (rest.length) {

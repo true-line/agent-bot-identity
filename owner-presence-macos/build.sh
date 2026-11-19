@@ -12,5 +12,5 @@ contents="$1/AgentBotOwnerPresence.app/Contents"
 mkdir -p "$contents/MacOS"
 cp "$src/Info.plist" "$contents/Info.plist"
 /usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library -O \
-    "$src/PairingChallenge.swift" "$src/OwnerKey.swift" "$src/Main.swift" \
+    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/OwnerKey.swift" "$src/Main.swift" \
     -o "$contents/MacOS/agent-bot-owner-presence"

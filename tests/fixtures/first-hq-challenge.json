@@ -1,0 +1,9 @@
+{
+  "action": "first-hq-provision",
+  "machine_key": "abababababababababababababababababababababababababababababababab",
+  "plan_id": "plan-20261119T020000Z-abcd",
+  "plan_digest": "2d82ea20059ea1188eeab2ec889bcf4133779f346cfc3881c0663bfd483a710c",
+  "nonce": "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0",
+  "expires_at": 1120,
+  "plan_canonical": "{\"version\":3,\"hq_account\":\"_agent-bot-hq\",\"dir\":\"none\",\"members\":[],\"steps\":[{\"kind\":\"hq-account\",\"target\":\"_agent-bot-hq\",\"action\":\"create\",\"group\":\"_agent-bot-hq\",\"mode\":\"0700\",\"detail\":\"hidden role account, home /var/agent-bot-hq, shell /usr/bin/false, private group, no password, no other groups\"}]}\n"
+}
