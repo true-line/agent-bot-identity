@@ -62,13 +62,15 @@ exit 0
   writeFileSync(join(dist, 'SHA256SUMS'), `${sum}  ${name}\n`);
   const home = join(root, 'home');
   mkdirSync(home);
-  return { dist, home, calls: () => (existsSync(join(home, 'calls.log')) ? readFileSync(join(home, 'calls.log'), 'utf8').trim().split('\n') : []) };
+  const ps = join(root, 'ps');
+  writeFileSync(ps, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return { dist, home, ps, calls: () => (existsSync(join(home, 'calls.log')) ? readFileSync(join(home, 'calls.log'), 'utf8').trim().split('\n') : []) };
 }
 
 function setup(box, args = []) {
   return spawnSync('sh', [SETUP, ...args], {
     encoding: 'utf8',
-    env: { PATH: process.env.PATH, HOME: box.home, AGENT_BOT_SETUP_DIST: box.dist, TMPDIR: tmpdir() },
+    env: { PATH: process.env.PATH, HOME: box.home, AGENT_BOT_SETUP_DIST: box.dist, AGENT_BOT_PS: box.ps, TMPDIR: tmpdir() },
   });
 }
 
