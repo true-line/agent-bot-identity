@@ -127,8 +127,12 @@ export async function openFirstHQReview(file, {
         const proof = verifiedFirstHQProof(challenge, output);
         res.once('finish', () => finish('approved'));
         reply(200, proof);
-      } catch {
+      } catch (error) {
         if (closed) return;
+        if (error?.code === 'machine-owner-provider-unavailable') {
+          res.once('finish', () => finish('refused', error));
+          return reply(503, { error: error.code });
+        }
         res.once('finish', () => finish('refused'));
         reply(409, {});
       }

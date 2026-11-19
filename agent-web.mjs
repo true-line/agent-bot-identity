@@ -1232,7 +1232,10 @@ const enrollChildren = new Set();
           const output = await firstHQSigner(pending.challenge, { home, env, platform });
           proof = verifiedFirstHQProof(pending.challenge, output);
         }
-        catch { throw failure(409, 'Owner approval failed or was declined. No public proof is available.'); }
+        catch (error) {
+          if (error?.code === 'machine-owner-provider-unavailable') throw failure(503, error.message);
+          throw failure(409, 'Owner approval failed or was declined. No public proof is available.');
+        }
         requireApprover();
         review(pending.challenge);
         sendJson(res, 200, proof);

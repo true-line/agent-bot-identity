@@ -1,0 +1,1 @@
+- macOS Machine pairing and first-HQ approvals now report when an authorized unbundled owner-presence provider is unavailable. Identity preserves the existing owner pin and continues to support local plan review (#1315).
