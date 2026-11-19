@@ -23,6 +23,7 @@ enum PresenceFailure: Error, LocalizedError {
 struct PairingChallenge: Decodable {
     let action: String
     let machine_key: String
+    let hq_uid: Int?
     let hq_key: String
     let nonce: String
     let expires_at: Int64
@@ -33,9 +34,17 @@ struct PairingChallenge: Decodable {
         let fields: Set<String> = ["action", "machine_key", "hq_key", "nonce", "expires_at"]
         guard bytes.count <= maximumBytes,
               let json = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(json.keys) == fields else { throw PresenceFailure.invalidChallenge }
+              let action = json["action"] as? String else { throw PresenceFailure.invalidChallenge }
+        switch action {
+        case "machine-pair":
+            guard Set(json.keys) == fields else { throw PresenceFailure.invalidChallenge }
+        case "machine-pair-ordinary":
+            guard Set(json.keys) == fields.union(["hq_uid"]) else { throw PresenceFailure.invalidChallenge }
+        default:
+            throw PresenceFailure.invalidChallenge
+        }
         let challenge = try JSONDecoder().decode(Self.self, from: bytes)
-        guard challenge.action == "machine-pair",
+        guard (action == "machine-pair" || (challenge.hq_uid.map { (501...Int(Int32.max)).contains($0) } == true)),
               [challenge.machine_key, challenge.hq_key, challenge.nonce].allSatisfy({ text in
                   text.utf8.count == 64 && text.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
               }) else { throw PresenceFailure.invalidChallenge }
@@ -48,7 +57,10 @@ struct PairingChallenge: Decodable {
     }
 
     var signedBytes: Data {
-        Data("agent-bot-machine-owner/v1\n\(action)\n\(machine_key)\n\(hq_key)\n\(nonce)\n\(expires_at)\n".utf8)
+        var fields = ["agent-bot-machine-owner/v1", action, machine_key, hq_key]
+        if let uid = hq_uid { fields.append(String(uid)) }
+        fields.append(contentsOf: [nonce, String(expires_at), ""])
+        return Data(fields.joined(separator: "\n").utf8)
     }
 
     private func fingerprint(_ hex: String) -> String {
@@ -62,6 +74,7 @@ struct PairingChallenge: Decodable {
     }
 
     var approvalReason: String {
-        "Pair HQ with Machine?\nMachine SHA-256: \(fingerprint(machine_key))\nHQ SHA-256: \(fingerprint(hq_key))"
+        let question = hq_uid.map { "Pair HQ in ordinary account UID \($0) with Machine?" } ?? "Pair HQ with Machine?"
+        return "\(question)\nMachine SHA-256: \(fingerprint(machine_key))\nHQ SHA-256: \(fingerprint(hq_key))"
     }
 }

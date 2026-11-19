@@ -1,0 +1,1 @@
+The macOS pairing review shows the ordinary-account HQ UID and binds it to the signed approval when the administrator explicitly selects this mode. Dedicated HQ pairing keeps its existing approval format.

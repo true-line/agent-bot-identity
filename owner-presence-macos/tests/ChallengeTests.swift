@@ -14,6 +14,23 @@ struct ChallengeTests {
         }
         let challenge = try parse(fields)
         precondition(challenge.signedBytes == Data("agent-bot-machine-owner/v1\nmachine-pair\n\(machine)\n\(hq)\n\(nonce)\n1120\n".utf8))
+        var ordinary = fields
+        ordinary["action"] = "machine-pair-ordinary"
+        precondition((try? parse(ordinary)) == nil)
+        for invalidUID: Any in [0, 500, -1, Int(Int32.max) + 1, true, "503", NSNull()] {
+            ordinary["hq_uid"] = invalidUID
+            precondition((try? parse(ordinary)) == nil)
+        }
+        ordinary["hq_uid"] = 503
+        let ordinaryChallenge = try parse(ordinary)
+        let ordinaryMessage = ["agent-bot-machine-owner/v1", "machine-pair-ordinary", machine, hq, "503", nonce, "1120", ""]
+        precondition(ordinaryChallenge.signedBytes == Data(ordinaryMessage.joined(separator: "\n").utf8))
+        precondition(ordinaryChallenge.approvalReason.contains("ordinary account UID 503"))
+        ordinary["hq_uid"] = 504
+        let differentAccount = try parse(ordinary)
+        precondition(differentAccount.signedBytes != ordinaryChallenge.signedBytes)
+        ordinary["action"] = "machine-pair"
+        precondition((try? parse(ordinary)) == nil)
         // Node's independent P-256 vector is also verified by Machine's Go enrollment test.
         let publicPoint = Data(base64Encoded: "BDjokZqqPh39fjipw1EC8xKwi2eosj6MFX94A/HdkRdd2T+vOg0UHeB+zx+8J+4aaQx1Xc/Eyc9n5sv8v4DkpXs=")!
         let der = Data(base64Encoded: "MEUCIQCgF9p55vCHM/OCmK8eNuA+0qKayEt2UTewnTV/xmoq3AIgRWwv4nM/Ae+pfNtz2shgRQtSGnt1liS+tHmIJYMJPn0=")!
