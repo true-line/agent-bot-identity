@@ -33,5 +33,5 @@ env -i HOME="$stage/home" TMPDIR="$stage/tmp" PATH="/usr/bin:/bin:/usr/sbin:/sbi
   '
 ln -s ../opt/agent-bot/bin/agent-bot "$stage/bin/agent-bot"
 cd "$stage/operator"
-env -i HOME="$stage/home" TMPDIR="$stage/tmp" PATH="/usr/bin:/bin" \
+env -i HOME="$stage/home" TMPDIR="$stage/tmp" PATH="/usr/bin:/bin" AGENT_BOT_SYSTEM_NODE_DIRS= \
   "$node_bin" staged-owner-review.mjs "$stage"
