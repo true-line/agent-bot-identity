@@ -4,6 +4,27 @@ import Foundation
 @main
 struct ChallengeTests {
     static func main() throws {
+        let transfer = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+        let firstHQ = try FirstHQChallenge.parse(transfer, now: 1000)
+        let expected = ["agent-bot-machine-owner/v1", "first-hq-provision", String(repeating: "ab", count: 32),
+            "plan-20261119T020000Z-abcd", "2d82ea20059ea1188eeab2ec889bcf4133779f346cfc3881c0663bfd483a710c",
+            String(repeating: "f0", count: 32), "1120", ""].joined(separator: "\n")
+        precondition(firstHQ.signedBytes == Data(expected.utf8))
+        precondition(firstHQ.approvalReason.contains(firstHQ.plan_digest))
+        precondition((try? PairingChallenge.parse(transfer, now: 1000)) == nil)
+        precondition((try? FirstHQChallenge.parse(transfer, now: 1120)) == nil)
+        var envelope = try JSONSerialization.jsonObject(with: transfer) as! [String: Any]
+        func parseFirst(_ text: String) throws -> FirstHQChallenge {
+            envelope["plan_canonical"] = text
+            envelope["plan_digest"] = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+            return try FirstHQChallenge.parse(JSONSerialization.data(withJSONObject: envelope), now: 1000)
+        }
+        let original = firstHQ.plan_canonical
+        for text in [original + " ", original.replacingOccurrences(of: #""members":[]"#, with: #""members":null"#),
+                     original.replacingOccurrences(of: #""version":3"#, with: #""version":3,"version":3"#),
+                     original.replacingOccurrences(of: #""action":"create""#, with: #""action":"repair""#)] {
+            precondition((try? parseFirst(text)) == nil)
+        }
         let machine = String(repeating: "ab", count: 32)
         let hq = String(repeating: "12", count: 32)
         let nonce = String(repeating: "f0", count: 32)

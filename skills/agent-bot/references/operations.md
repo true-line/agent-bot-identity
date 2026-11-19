@@ -25,6 +25,16 @@ Use this reference for setup, minting, diagnostics, and identity repair.
 | Restore an App key and issuer from pass-cli (legacy local custody only) | `agent-bot ensure-private-key --app <slug> [--force]` |
 | Read an authorized password/API key | `agent-bot secret get --provider <id> --collection <name> --item <title> --field <name> --reason <text>` |
 
+## Review the first HQ account on macOS
+
+The prefix administrator transfers one Machine challenge to the signed-in daily owner.
+From the daily owner's terminal run `agent-bot machine review-first-hq FILE`.
+The local Approvals page shows each step and the Machine fingerprint. Compare
+the fingerprint independently and review the exact plan before approving with
+the installed owner app. Return the resulting public proof to the administrator.
+The review closes after use or expiry. This entry point needs no existing web
+principal or HQ pairing.
+
 ## Attest an existing local machine pairing
 
 When Harbor reports `pairing_required`, the owner can check `agent-bot machine status`

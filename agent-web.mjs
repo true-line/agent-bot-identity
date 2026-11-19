@@ -31,7 +31,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { assertAuthorized, assertMachineAuthorized, fetchCatalog, getPrincipal, listPrincipals, loadDevice, principalsFile, serverUrl, listSessions } from './identity-host.mjs';
+import { approveFirstHQ, assertAuthorized, assertMachineAuthorized, fetchCatalog, getPrincipal, listPrincipals, loadDevice, principalsFile, serverUrl, listSessions } from './identity-host.mjs';
 import { stateDirectory } from './state-paths.mjs';
 import { operationDigest } from './agent-jobs.mjs';
 import { populationFile } from './agent-population.mjs';
@@ -48,6 +48,7 @@ import {
   writeAgentDaemonPeer,
 } from './machine-client.mjs';
 import { listMembersPlans, MEMBERS_PLAN_DIGEST, readMembersPlan } from './machine-members.mjs';
+import { reviewFirstHQ, verifiedFirstHQProof } from './machine-first-hq.mjs';
 import { daemonStateFile } from './daemon-client.mjs';
 import { wrongAccountWarning } from './daemon-state.mjs';
 import { daemonStatus } from './daemon-status.mjs';
@@ -238,6 +239,7 @@ export function createWebLayer({
   daemonToken,
   confirmDecision = null,
   now = () => new Date(),
+  firstHQSigner = approveFirstHQ,
   reconcileInFlight = { current: null },
   catalogFetch = { inFlight: null, result: null, at: 0 },
   lastDelivery = { current: null },
@@ -258,6 +260,7 @@ export function createWebLayer({
   // they die with the daemon, are never written to disk, and are therefore
   // never available to another local account or a later process.
   let doctorInFlight = null;
+  let firstHQPromptOpen = false;
   const machineInFlight = new Map();
 let enrollInFlight = false;
 const enrollChildren = new Set();
@@ -1179,6 +1182,61 @@ const enrollChildren = new Set();
         invocationId: match[1],
         name,
       }));
+      return;
+    }
+    if (req.method === 'POST' && (match = pathname.match(/^\/ui\/api\/approvals\/first-hq\/(preview|approve|discard)$/))) {
+      // The normal web UI also supports a reverse proxy. Transfer and proof
+      // stay on the local owner session, outside the shared proposal ledger.
+      const hosts = ['127.0.0.1', '[::1]', 'localhost'].map((h) => `${h}:${req.socket.localPort}`);
+      if (!hosts.includes(req.headers.host) || req.headers.origin !== `http://${req.headers.host}`
+        || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
+        || Object.keys(req.headers).some((h) => h === 'forwarded' || h.startsWith('x-forwarded-'))) {
+        throw failure(403, 'Use the local Approvals page for first-HQ provisioning.');
+      }
+      if (platform !== 'darwin') throw failure(400, 'First-HQ provisioning requires macOS.');
+      function requireApprover() {
+        const current = requirePrincipal(req);
+        try { assertMachineAuthorized({ principal: current.principal, operation: 'approve' }); }
+        catch { throw failure(403, 'principal is not authorized for this operation'); }
+        return sessions.get(current.token);
+      }
+      const session = requireApprover();
+      const unixNow = () => Math.floor(now().getTime() / 1000);
+      const review = (challenge) => {
+        try { return reviewFirstHQ(challenge, unixNow()); }
+        catch (error) { throw failure(400, error instanceof SyntaxError ? 'Invalid first-HQ plan JSON.' : error.message); }
+      };
+      if (match[1] === 'preview') {
+        delete session.firstHQ;
+        const details = review(body);
+        const reviewId = randomBytes(24).toString('hex');
+        session.firstHQ = { reviewId, challenge: body };
+        sendJson(res, 200, { review_id: reviewId, ...details });
+        return;
+      }
+      const pending = session.firstHQ;
+      if (Object.keys(body).length !== 2 || !pending || pending.reviewId !== body.review_id
+        || pending.challenge.plan_digest !== body.plan_digest) throw failure(409, 'This review is no longer current.');
+      if (match[1] === 'discard') {
+        delete session.firstHQ;
+        sendJson(res, 200, { discarded: true });
+        return;
+      }
+      if (firstHQPromptOpen) throw failure(409, 'An owner approval is in progress.');
+      delete session.firstHQ;
+      review(pending.challenge);
+      firstHQPromptOpen = true;
+      try {
+        let proof;
+        try {
+          const output = await firstHQSigner(pending.challenge, { home, env, platform });
+          proof = verifiedFirstHQProof(pending.challenge, output);
+        }
+        catch { throw failure(409, 'Owner approval failed or was declined. No public proof is available.'); }
+        requireApprover();
+        review(pending.challenge);
+        sendJson(res, 200, proof);
+      } finally { firstHQPromptOpen = false; }
       return;
     }
     if (req.method === 'GET' && pathname === '/ui/api/approvals') {

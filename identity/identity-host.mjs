@@ -31,6 +31,7 @@ export { mint } from './mint-token.mjs';
 export { verifyOwnerDecisionPresence } from './owner-decision-action.mjs';
 export { createDaemonJournalStore, sealRecordOnlyReconciliation } from './owner-decision-journal-store.mjs';
 export { readOwnerDecisionTrust, readOwnerDecisionTrustObservation } from './owner-decision-trust.mjs';
+export { approveFirstHQ } from './machine-owner-presence.mjs';
 export { keydPresence } from './owner-presence.mjs';
 export { extractToken } from './owner-statement.mjs';
 export { hookBypassReason, readGitConfig, resolveAgentSlug, shadowedGhReason, statedBotSlug, unboundBotReason, unboundBotSlug, unprovableBotReason, unverifiableGhReason } from './resolve-agent.mjs';

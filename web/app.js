@@ -1,3 +1,5 @@
+import { showFirstHQReview } from './first-hq.js';
+
 // agent-bot private web client. Vanilla JS, no build step, no dependencies.
 // The daemon is the only authority: this page holds no tokens (the session is
 // an HttpOnly cookie it cannot read), keeps no durable state, and rebuilds
@@ -691,6 +693,29 @@ async function cancelJob(invocationId) {
 
 // --- Approvals -----------------------------------------------------------------
 
+function wireFirstHQ() {
+  const fileInput = $('first-hq-file');
+  const box = $('first-hq-review');
+  if (!fileInput || !box) return;
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    box.replaceChildren();
+    if (!file) return;
+    fileInput.disabled = true;
+    try {
+      if (file.size > 64 * 1024) throw new Error('The challenge exceeds 64 KiB.');
+      const base = '/ui/api/approvals/first-hq/';
+      const challenge = JSON.parse(await file.text());
+      const review = await api(base + 'preview', { method: 'POST', body: challenge });
+      const receipt = { review_id: review.review_id, plan_digest: review.plan_digest };
+      showFirstHQReview(box, review, (decision) => api(base + decision, { method: 'POST', body: receipt }),
+        (busy) => { fileInput.disabled = busy; });
+    } catch (error) { box.replaceChildren(el('p', { class: 'error', text: error.message })); }
+    finally { fileInput.disabled = false; }
+  });
+}
+
 async function loadApprovals() {
   const { proposals } = await api('/ui/api/approvals');
   state.proposals = proposals;
@@ -699,6 +724,9 @@ async function loadApprovals() {
   badge.textContent = String(proposals.length);
   const list = $('approvals-list');
   const canApprove = state.me?.operations.includes('approve');
+  const transfer = $('first-hq');
+  if (transfer) transfer.hidden = !(canApprove && state.me.souls.length === 1 && state.me.souls[0] === '*'
+    && ['127.0.0.1', '[::1]', 'localhost'].includes(window.location.hostname));
   list.replaceChildren(...proposals.map((proposal) => {
     const card = el('div', { class: 'proposal' }, [
       el('div', { text: proposal.summary }),
@@ -797,6 +825,7 @@ async function boot() {
   for (const navButton of document.querySelectorAll('#nav button')) {
     navButton.addEventListener('click', () => showView(navButton.dataset.view));
   }
+  wireFirstHQ();
   wireAgentMachineForms();
   wireSettingsForm();
   wireServerActions();

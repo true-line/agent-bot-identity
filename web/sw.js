@@ -8,7 +8,7 @@
 // fail.
 
 const CACHE = 'agent-bot-ui-v1';
-const SHELL = ['/ui/', '/ui/app.js', '/ui/style.css', '/ui/manifest.webmanifest', '/ui/icon.svg'];
+const SHELL = ['/ui/', '/ui/app.js', '/ui/first-hq.js', '/ui/style.css', '/ui/manifest.webmanifest', '/ui/icon.svg'];
 
 // Everything under /ui/api plus the pairing endpoints is daemon state or
 // authentication. These requests always go to the network and their

@@ -75,7 +75,7 @@ struct OwnerKey {
         return key.publicKey.x963Representation
     }
 
-    func approve(_ request: PairingChallenge) async throws -> [String: String] {
+    func approve(_ request: OwnerRequest) async throws -> [String: String] {
         // A new context per action prevents a prior request from granting this one.
         let context = LAContext()
         defer { context.invalidate() }

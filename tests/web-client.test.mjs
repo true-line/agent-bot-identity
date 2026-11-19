@@ -30,6 +30,7 @@ import {
   proposalOwnerGate,
   webRootDirectory,
 } from '../agent-web.mjs';
+import { firstHQSignedBytes } from '../machine-first-hq.mjs';
 import { addArtifact, createSession, operationDigest } from '../agent-jobs.mjs';
 import {
   authorizeSouls,
@@ -2200,3 +2201,69 @@ async function approveSavedPlan(platform) {
     assert.match(app, /outcome\.result\.next/);
   }, { home: root, webDeps: { platform } });
 }
+
+test('first-HQ review and signed proof belong to one direct, authorized web session', async () => {
+  const { env } = scratch();
+  const writer = seedPrincipal(env, { label: 'owner', souls: ['*'], operations: ['observe', 'approve'] });
+  const viewer = seedPrincipal(env, { label: 'viewer', souls: ['*'], operations: ['observe'] });
+  const scoped = seedPrincipal(env, { label: 'scoped', souls: [AGENT_ID], operations: ['observe', 'approve'] });
+  const challenge = JSON.parse(readFileSync(new URL('./fixtures/first-hq-challenge.json', import.meta.url)));
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const { x, y } = publicKey.export({ format: 'jwk' });
+  const pub = Buffer.concat([Buffer.of(4), Buffer.from(x, 'base64url'), Buffer.from(y, 'base64url')]).toString('base64');
+  let calls = 0;
+  let onSign = () => {};
+  const webDeps = {
+    platform: 'darwin',
+    async firstHQSigner(input) {
+      calls++;
+      assert.deepEqual(input, challenge);
+      await onSign();
+      return JSON.stringify({ public_key: pub, signature: amSign('sha256', firstHQSignedBytes(input), privateKey).toString('base64') });
+    },
+  };
+  await withServer(env, async ({ ui, pairCookie, clock }) => {
+    const owner = await pairCookie(writer.principalId);
+    const other = await pairCookie(writer.principalId);
+    challenge.expires_at = clock.value.getTime() / 1000 + 120;
+    const post = (path, body, cookie = owner, opts = {}) => ui('/ui/api/approvals/first-hq/' + path, { method: 'POST', body, cookie, ...opts });
+    const preview = async (cookie = owner) => {
+      const res = await post('preview', challenge, cookie);
+      assert.equal(res.status, 200);
+      const r = await res.json();
+      assert.deepEqual(r.plan, JSON.parse(challenge.plan_canonical));
+      assert.equal(r.machine_fingerprint, createHash('sha256').update(Buffer.from(challenge.machine_key, 'hex')).digest('hex'));
+      return { review_id: r.review_id, plan_digest: r.plan_digest };
+    };
+    for (const p of [viewer, scoped]) {
+      assert.equal((await post('preview', challenge, await pairCookie(p.principalId))).status, 403);
+    }
+    assert.equal((await post('preview', challenge, '')).status, 401);
+    assert.equal((await post('preview', challenge, owner, { csrf: false })).status, 403);
+    assert.equal((await post('preview', challenge, owner, { origin: 'https://proxy.example', headers: { host: 'proxy.example' } })).status, 403);
+    assert.equal((await post('preview', challenge, owner, { headers: { 'x-forwarded-for': '127.0.0.1' } })).status, 403);
+    assert.equal((await post('preview', { ...challenge, nonce: 'f'.repeat(70000) })).status, 413);
+    assert.equal((await post('preview', { ...challenge, plan_digest: '0'.repeat(64) })).status, 400);
+    const first = await preview();
+    assert.equal((await post('approve', first, other)).status, 409);
+    assert.equal((await post('approve', { ...first, plan_digest: '0'.repeat(64) })).status, 409);
+    assert.equal((await post('discard', first)).status, 200);
+    assert.equal((await post('approve', first)).status, 409);
+    assert.equal(calls, 0);
+    const review = await preview();
+    const approved = await post('approve', review);
+    assert.equal(approved.status, 200);
+    const proof = await approved.json();
+    assert.deepEqual(Object.keys(proof).sort(), ['public_key', 'signature']);
+    assert.equal(proof.public_key, pub);
+    assert.equal((await post('approve', review)).status, 409);
+    onSign = () => { throw new Error('canceled'); };
+    assert.equal((await post('approve', await preview())).status, 409);
+    onSign = () => { clock.value = new Date(clock.value.getTime() + 120000); };
+    assert.equal((await post('approve', await preview())).status, 400);
+    challenge.expires_at = clock.value.getTime() / 1000 + 120;
+    onSign = () => ui('/ui/api/logout', { method: 'POST', body: {}, cookie: owner });
+    assert.equal((await post('approve', await preview())).status, 401);
+    assert.equal(calls, 4);
+  }, { webDeps });
+});
