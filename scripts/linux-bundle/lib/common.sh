@@ -363,12 +363,42 @@ detect_foreign_pair() {
   done
 
   if command -v "$(ps_cmd)" > /dev/null 2>&1; then
-    "$(ps_cmd)" -eo pid=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
-    grep -E 'daemon run|agent-comms[^ ]*[ /]broker|agent-comms-broker' "$SCRATCH/ps" \
-      > "$SCRATCH/matches" 2>/dev/null || : > "$SCRATCH/matches"
-    # Drop this probe's own grep and anything inside this install's prefix.
-    grep -vF "$SCRATCH" "$SCRATCH/matches" 2>/dev/null | grep -vF "$PREFIX/" > "$SCRATCH/foreign" \
-      2>/dev/null || : > "$SCRATCH/foreign"
+    # Both procps and BSD ps select the effective UID with -u. Keep the
+    # kernel command separately: args alone can contain examples in arbitrary
+    # commands. -ww preserves long paths in the release and in the node runtime.
+    "$(ps_cmd)" -ww -u "$(id -u)" -o pid=,ucomm=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
+    awk -v prefix="$PREFIX/" '
+      function basename(path) { sub(/^.*\//, "", path); return path }
+      {
+        pid = $1; comm = $2
+        if (pid !~ /^[0-9]+$/ || comm !~ /^(agent-bot(\.mjs)?|agent-daemon\.mj[s]?|agent-comms(\.mjs)?|agent-comms-bro(k(er?)?)?|node(js)?|sh|dash|bash|zsh)$/) next
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+/, "")
+        args = $0
+        # The launcher may have execed Node, or a shell may still be running
+        # the wrapper. Strip just that executable, including a path with spaces.
+        if (match($0, /(^|\/)(node(js)?|sh|dash|bash|zsh)[[:space:]]+/)) {
+          runtime = substr($0, 1, RSTART + RLENGTH - 1)
+          sub(/[[:space:]]+$/, "", runtime)
+          if (runtime ~ /[[:space:]]+(\/|\.\.?\/)/) next
+          $0 = substr($0, RSTART + RLENGTH)
+        }
+        if ($0 ~ /^-/) next
+        # Locate the actual CLI entry and its operation. A further absolute
+        # path argument before the entry is not part of a spaced install path.
+        if (match($0, /[[:space:]]+(daemon[[:space:]]+run|broker[[:space:]]+run|run)([[:space:]]|$)/)) {
+          entry = substr($0, 1, RSTART - 1); op = substr($0, RSTART, RLENGTH)
+          gsub(/[[:space:]]+/, " ", op); sub(/^ /, "", op); sub(/ $/, "", op)
+        } else { entry = $0; op = "" }
+        if (entry ~ /[[:space:]]+(\/|\.\.?\/)/ || index(entry, prefix) == 1) next
+        name = basename(entry)
+        if ((name ~ /^agent-bot(\.mjs)?$/ && (op == "daemon run" || op == "broker run")) ||
+            (name == "agent-daemon.mjs" && op == "run") ||
+            (name ~ /^agent-comms(\.mjs)?$/ && op == "broker run") ||
+            (name == "agent-comms-broker" && (op == "" || op == "run")) ||
+            (name == "owner-supervised-broker.mjs" && op == ""))
+          print pid, args
+      }
+    ' "$SCRATCH/ps" > "$SCRATCH/foreign"
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       add_finding "process ${line%% *} ${line#* }"

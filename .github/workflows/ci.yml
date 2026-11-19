@@ -161,7 +161,7 @@ jobs:
         run: node --test --test-name-pattern="^machine attest" tests/machine-client.test.mjs
       - name: Run the owner-decision journal tests on Darwin
         run: node --test tests/owner-decision-journal*.test.mjs
-      - name: Build the macOS owner approval app and test the pairing challenge
+      - name: Verify the macOS pairing and first-HQ challenge transcripts
         run: sh owner-presence-macos/tests/hosted.sh
 
   codeql:

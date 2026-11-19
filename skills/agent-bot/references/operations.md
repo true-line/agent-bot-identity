@@ -29,11 +29,11 @@ Use this reference for setup, minting, diagnostics, and identity repair.
 
 The prefix administrator transfers one Machine challenge to the signed-in daily owner.
 From the daily owner's terminal run `agent-bot machine review-first-hq FILE`.
-The local Approvals page shows each step and the Machine fingerprint. Compare
-the fingerprint independently and review the exact plan before approving with
-the installed owner app. Return the resulting public proof to the administrator.
-The review closes after use or expiry. This entry point needs no existing web
-principal or HQ pairing.
+The local Approvals page shows each step and the Machine fingerprint for
+independent comparison. This version can display the plan, but it has no
+authorized provider for a fresh owner proof. Keep the existing owner pin.
+New approvals require a compatible provider for that pin. The review closes
+after use or expiry and can be opened before HQ pairing.
 
 ## Attest an existing local machine pairing
 

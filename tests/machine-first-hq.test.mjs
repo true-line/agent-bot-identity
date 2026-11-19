@@ -46,7 +46,6 @@ test('fresh first-HQ CLI review is local, single-use and ends on direct browser 
   const { generateKeyPairSync, sign } = await import('node:crypto');
   const { openFirstHQReview } = await import('../machine-first-hq-review.mjs');
   const { runMachineCli } = await import('../cli/machine.mjs');
-  const { approveFirstHQ } = await import('../identity/machine-owner-presence.mjs');
   const home = mkdtempSync(join(tmpdir(), 'first-hq-owner-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const file = join(home, 'transfer.json');
@@ -58,15 +57,12 @@ test('fresh first-HQ CLI review is local, single-use and ends on direct browser 
   const { x, y } = publicKey.export({ format: 'jwk' });
   const public_key = Buffer.concat([Buffer.of(4), Buffer.from(x, 'base64url'), Buffer.from(y, 'base64url')]).toString('base64');
   let asks = 0;
-  const signer = (challenge, options) => approveFirstHQ(challenge, {
-    ...options, checkPath() {}, exec() {},
-    async sign(input) {
-      asks++;
-      assert.deepEqual(JSON.parse(input), transfer);
-      return JSON.stringify({ public_key, signature: sign('sha256', firstHQSignedBytes(challenge), privateKey).toString('base64') });
-    },
-  });
-  for (const action of ['approve', 'discard', 'close']) {
+  const signer = async (challenge) => {
+    asks++;
+    assert.deepEqual(challenge, transfer);
+    return JSON.stringify({ public_key, signature: sign('sha256', firstHQSignedBytes(challenge), privateKey).toString('base64') });
+  };
+  for (const action of ['approve', 'discard', 'close', 'unavailable']) {
     let opened;
     const opening = new Promise((resolve) => { opened = resolve; });
     const stdout = [];
@@ -74,9 +70,11 @@ test('fresh first-HQ CLI review is local, single-use and ends on direct browser 
       env, home, stdout: { write: (s) => stdout.push(s) },
       // Only the browser launcher and physical signing are test substitutes.
       firstHQReview: (file, options) => openFirstHQReview(file, {
-        ...options, platform: 'darwin', now: () => 1000, signer, openBrowser: (url) => opened(new URL(url)),
+        ...options, platform: 'darwin', now: () => 1000, signer: action === 'unavailable' ? undefined : signer, openBrowser: (url) => opened(new URL(url)),
       }),
     });
+    const unavailable = action === 'unavailable'
+      ? assert.rejects(completed, { code: 'machine-owner-provider-unavailable' }) : null;
     const url = await opening;
     const origin = url.origin;
     const launch = url.hash.slice(1);
@@ -94,10 +92,12 @@ test('fresh first-HQ CLI review is local, single-use and ends on direct browser 
     assert.equal((await post('claim', launch, {})).status, 403);
     assert.equal((await post('approve', launch, { plan_digest: transfer.plan_digest })).status, 403);
     assert.equal((await post('approve', session, { plan_digest: '0'.repeat(64) })).status, 409);
-    const result = await post(action, session, action === 'close' ? {} : { plan_digest: transfer.plan_digest });
-    assert.equal(result.status, 200);
+    const result = await post(action === 'unavailable' ? 'approve' : action, session, action === 'close' ? {} : { plan_digest: transfer.plan_digest });
+    assert.equal(result.status, action === 'unavailable' ? 503 : 200);
+    if (action === 'unavailable') assert.deepEqual(await result.json(), { error: 'machine-owner-provider-unavailable' });
     if (action === 'approve') assert.equal(verifiedFirstHQProof(transfer, await result.text()).public_key, public_key);
-    assert.equal(await completed, action === 'approve' ? 0 : 1);
+    if (unavailable) await unavailable;
+    else assert.equal(await completed, action === 'approve' ? 0 : 1);
     assert.ok(stdout.every((s) => !s.includes(launch) && !s.includes(session)));
     await assert.rejects(fetch(url));
   }
