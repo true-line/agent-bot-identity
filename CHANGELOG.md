@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.21
+
+- The owner dashboard lists and reviews macOS member-account plans from the same Application Support directory used by `managed-machine members apply` (#1452).
+- Owners can run `agent-bot machine attest` on an enrolled device to register its existing agent-daemon and agent-machine pairing with Harbor (true-line/agent-bot#66).
+- Prepare the existing MCP inbox command to use the supported HQ SDK query capability from inherited Soul member inputs, with lazy standalone compatibility and no fallback or consume replay. The genuine shared-release pin, cancellable bootstrap and positive installed-process acceptance remain pending; no production activation is claimed (#1444).
+- Add a separate macOS owner approval app and CLI commands for signing a Machine pairing challenge with a Secure Enclave key. The CLI checks the provisioned app before use and keeps the credential helper out of the standard account's protected pairing instructions (#1315).
+- `agent-bot server enroll` resolves `--harness` and `--add-harness` names to their configured GitHub App slugs before requesting device approval (#1424).
+- Soul-token v2 daemons bind their account-watch identity from the pinned signing issuer and enrolled device, so they no longer need a host `vouch-key.pem` for the broker ready check (#1450).
+
 ## 0.15.20
 
 - `agent-bot server enroll` (and so `agent-bot cloud up`) saves a device grant while it waits for approval and resumes it on the next run instead of asking the server for a new code. A cloud container paused mid-wait used to lose the grant: an owner who then approved the code the session had shown approved a grant nothing polled any more, and the server creates the device only when the approved code is polled, so the next session asked for a fresh approval. The saved grant (`enroll-grant.json`, 0600) is resumed only for the same server, harnesses and device key while the code is still valid, and is dropped once the server denies, expires or redeems it; a forced re-enroll keeps its staged key for the resume.
