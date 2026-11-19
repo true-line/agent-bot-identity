@@ -20,7 +20,24 @@ enum PresenceFailure: Error, LocalizedError {
     }
 }
 
-struct PairingChallenge: Decodable {
+struct PairingChallenge {
+    static let maximumBytes = PairingFields.maximumBytes
+    private let fields: PairingFields
+
+    static func parse(_ bytes: Data, now: Int64) throws -> Self {
+        Self(fields: try PairingFields.parse(bytes, now: now))
+    }
+
+    func checkExpiry(now: Int64) throws { try fields.checkExpiry(now: now) }
+    var signedBytes: Data { fields.signedBytes }
+
+    var approvalReason: String {
+        guard let uid = fields.hq_uid else { return fields.approvalReason }
+        return "HQ will run in ordinary account UID \(uid).\n\(fields.approvalReason)"
+    }
+}
+
+private struct PairingFields: Decodable {
     let action: String
     let machine_key: String
     let hq_uid: Int?
@@ -74,7 +91,6 @@ struct PairingChallenge: Decodable {
     }
 
     var approvalReason: String {
-        let question = hq_uid.map { "Pair HQ in ordinary account UID \($0) with Machine?" } ?? "Pair HQ with Machine?"
-        return "\(question)\nMachine SHA-256: \(fingerprint(machine_key))\nHQ SHA-256: \(fingerprint(hq_key))"
+        "Pair HQ with Machine?\nMachine SHA-256: \(fingerprint(machine_key))\nHQ SHA-256: \(fingerprint(hq_key))"
     }
 }
