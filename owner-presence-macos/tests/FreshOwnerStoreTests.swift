@@ -53,6 +53,73 @@ private func codeContinuity(_ directory: URL) throws {
     try check(try retained != OwnerItemAccess.codeIdentity(of: trusted("/usr/bin/false")))
 }
 
+private func loginKeychainLayout(_ root: URL) throws {
+    let fm = FileManager.default
+    let home = root.appendingPathComponent("daily")
+    let library = home.appendingPathComponent("Library")
+    let keychains = library.appendingPathComponent("Keychains")
+    let database = keychains.appendingPathComponent("login.keychain-db")
+    try fm.createDirectory(at: keychains, withIntermediateDirectories: true)
+    // Plain fixture bytes. Do not open a real database or change the default search list.
+    try Data("fixture".utf8).write(to: database)
+    func mode(_ url: URL, _ bits: mode_t) throws { try check(chmod(url.path, bits) == 0) }
+    func acl(_ args: [String], _ url: URL) throws {
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = args + [url.path]
+        try chmod.run()
+        chmod.waitUntilExit()
+        try check(chmod.terminationStatus == 0)
+    }
+    let fd = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    try check(fd >= 0)
+    let base = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    func validate() throws {
+        _ = try checkedLoginKeychain(root: base, homeComponents: ["daily"], uid: getuid())
+    }
+    try mode(home, 0o750)
+    try mode(library, 0o700)
+    try mode(keychains, 0o755)
+    try mode(database, 0o644)
+    try acl(["+a", "everyone deny delete"], library)
+    defer { try? acl(["-N"], library) }
+    try validate()
+    try mode(library, 0o755)
+    try refused { try validate() } // The 0700 scratch root is outside the registered home.
+    try mode(database, 0o600)
+    try validate()
+    try mode(database, 0o644)
+    try mode(keychains, 0o700)
+    try validate()
+    try mode(keychains, 0o755)
+    try mode(library, 0o700)
+    for path in [home, library, keychains, database] {
+        var st = stat()
+        try check(lstat(path.path, &st) == 0)
+        let original = st.st_mode & 0o777
+        try mode(path, original | 0o020)
+        try refused { try validate() }
+        try mode(path, original)
+        try acl(["+a", "everyone allow readattr"], path)
+        try refused { try validate() }
+        try acl(["-a", "everyone allow readattr"], path)
+    }
+    let secondName = root.appendingPathComponent("second-link")
+    try fm.linkItem(at: database, to: secondName)
+    try refused { try validate() }
+    try fm.removeItem(at: secondName)
+    try acl(["-N"], library) // The deny-delete fixture also prevents renaming this directory.
+    for path in [database, keychains, library, home] {
+        let saved = path.appendingPathExtension("saved")
+        try fm.moveItem(at: path, to: saved)
+        try fm.createSymbolicLink(at: path, withDestinationURL: saved)
+        try refused { try validate() }
+        try fm.removeItem(at: path)
+        try fm.moveItem(at: saved, to: path)
+    }
+    try validate()
+}
+
 private func creationOrdering(_ dir: String) throws {
     var events: [String] = []
     var present = false
@@ -144,6 +211,7 @@ private func hostedFileKeychain(_ dir: URL) throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: dir) }
+        try loginKeychainLayout(dir)
         try syntheticACLs()
         try codeContinuity(dir)
         try creationOrdering(dir.path)

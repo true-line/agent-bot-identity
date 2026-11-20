@@ -156,6 +156,56 @@ func withFreshOwnerSlot<T>(directory: String, exists: () throws -> Bool,
     return try create()
 }
 
+// Walk the registered home from a trusted directory descriptor. Read bits on the
+// database are harmless only if a validated owner-only directory prevents traversal.
+func checkedLoginKeychain(root: FileHandle, homeComponents: [String], uid: uid_t) throws -> FileHandle {
+    func metadata(_ fd: Int32) throws -> stat {
+        var st = stat()
+        guard fstat(fd, &st) == 0, st.st_mode & 0o6022 == 0 else { throw FreshOwnerFailure.unavailable }
+        guard let acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED) else {
+            guard errno == ENOENT else { throw FreshOwnerFailure.unavailable }
+            return st
+        }
+        defer { acl_free(UnsafeMutableRawPointer(acl)) }
+        var entry: acl_entry_t?
+        var cursor = ACL_FIRST_ENTRY
+        while acl_get_entry(acl, cursor.rawValue, &entry) == 0 {
+            var tag = ACL_UNDEFINED_TAG
+            guard acl_get_tag_type(entry, &tag) == 0, tag == ACL_EXTENDED_DENY else {
+                throw FreshOwnerFailure.unavailable
+            }
+            cursor = ACL_NEXT_ENTRY
+        }
+        // Darwin reports EINVAL at the end of an ACL, including an empty ACL.
+        guard errno == EINVAL else { throw FreshOwnerFailure.unavailable }
+        return st
+    }
+    guard !homeComponents.isEmpty, homeComponents.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") })
+    else { throw FreshOwnerFailure.unavailable }
+    var parent = root
+    let base = try metadata(root.fileDescriptor)
+    guard base.st_mode & S_IFMT == S_IFDIR, base.st_uid == 0 || base.st_uid == uid else { throw FreshOwnerFailure.unavailable }
+    var privateAncestor = false
+    for (i, name) in (homeComponents + ["Library", "Keychains"]).enumerated() {
+        let fd = openat(parent.fileDescriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw FreshOwnerFailure.unavailable }
+        parent = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let st = try metadata(fd)
+        let insideHome = i >= homeComponents.count - 1
+        guard st.st_uid == uid || (!insideHome && st.st_uid == 0) else { throw FreshOwnerFailure.unavailable }
+        if insideHome && st.st_mode & 0o077 == 0 { privateAncestor = true }
+    }
+    let fd = openat(parent.fileDescriptor, "login.keychain-db", O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+    guard fd >= 0 else { throw FreshOwnerFailure.unavailable }
+    let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    let st = try metadata(fd)
+    guard st.st_mode & S_IFMT == S_IFREG, st.st_nlink == 1, st.st_uid == uid,
+          st.st_mode & 0o011 == 0, privateAncestor || st.st_mode & 0o044 == 0 else {
+        throw FreshOwnerFailure.unavailable
+    }
+    return file
+}
+
 struct FreshOwnerStore {
     private typealias Key = SecureEnclave.P256.Signing.PrivateKey
     private let keychain: SecKeychain
@@ -174,18 +224,22 @@ struct FreshOwnerStore {
             throw FreshOwnerFailure.unavailable
         }
         let home = String(cString: user.pointee.pw_dir)
-        guard home.hasPrefix("/") else { throw FreshOwnerFailure.unavailable }
+        let components = home.split(separator: "/").map(String.init)
+        guard home == "/" + components.joined(separator: "/") else { throw FreshOwnerFailure.unavailable }
+        let rootFD = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard rootFD >= 0 else { throw FreshOwnerFailure.unavailable }
+        let file = try checkedLoginKeychain(root: FileHandle(fileDescriptor: rootFD, closeOnDealloc: true),
+                                            homeComponents: components, uid: getuid())
         let path = URL(fileURLWithPath: home).appendingPathComponent("Library/Keychains/login.keychain-db")
-        var st = stat()
-        guard path.resolvingSymlinksInPath().path == path.path,
-              lstat(path.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG, st.st_nlink == 1,
-              st.st_uid == getuid(), st.st_mode & 0o077 == 0 else { throw FreshOwnerFailure.unavailable }
         // This affects only this one-shot CLI process. Keychain reads must
         // never open an OS authorization dialog; exact approval uses LAContext.
         try requireOwnerStatus(SecKeychainSetUserInteractionAllowed(false))
         var db: SecKeychain?
         try requireOwnerStatus(SecKeychainOpen(path.path, &db))
-        guard let db else { throw FreshOwnerFailure.unavailable }
+        var checked = stat(), openedPath = stat()
+        guard let db, fstat(file.fileDescriptor, &checked) == 0, lstat(path.path, &openedPath) == 0,
+              checked.st_dev == openedPath.st_dev, checked.st_ino == openedPath.st_ino,
+              checked.st_nlink == 1 else { throw FreshOwnerFailure.unavailable }
         var flags: SecKeychainStatus = 0
         try requireOwnerStatus(SecKeychainGetStatus(db, &flags))
         guard flags & UInt32(kSecUnlockStateStatus) != 0 else { throw FreshOwnerFailure.unavailable }
