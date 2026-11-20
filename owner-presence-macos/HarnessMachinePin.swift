@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import OpenDirectory
@@ -6,16 +7,36 @@ import OpenDirectory
 // two installed Homebrew locations are eligible; neither a transfer nor the
 // invoking account can choose the trusted directory.
 enum HarnessMachinePin {
-    enum Failure: Error { case unavailable }
+    enum Failure: Error {
+        case unavailable, prefixWriteGroup, varWriteGroup
+
+        var diagnostic: String? {
+            let location: String
+            switch self {
+            case .unavailable: return nil
+            case .prefixWriteGroup: location = "prefix"
+            case .varWriteGroup: location = "var directory"
+            }
+            return "Machine owner approval unavailable. The group-writable Homebrew \(location) must belong to the admin group. Ask the Homebrew administrator to review its group or write permissions."
+        }
+    }
     private static let flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
     private static func file(_ fd: Int32) throws -> FileHandle {
         guard fd >= 0 else { throw Failure.unavailable }
         return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
-    static func verify(_ hex: String) throws {
+    static func installedPublicKey() throws -> Data {
         guard getuid() != 0, getuid() == geteuid() else { throw Failure.unavailable }
         let root = try file(open("/", flags | O_DIRECTORY))
-        try verify(hex, published: publishedKey(root: root, check: checkComponent))
+        return try publishedKey(root: root, check: checkComponent)
+    }
+
+    static func fingerprint(_ published: Data) -> String {
+        SHA256.hash(data: published).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func verify(_ hex: String) throws {
+        try verify(hex, published: installedPublicKey())
     }
 
     static func verify(_ hex: String, published: Data) throws {
@@ -68,17 +89,23 @@ enum HarnessMachinePin {
         return published
     }
 
-    static func allowed(_ s: stat, _ type: Component, owner: uid_t, caller: uid_t, callerCanWrite: Bool) -> Bool {
+    static func checkMetadata(_ s: stat, _ type: Component, owner: uid_t, caller: uid_t, callerCanWrite: Bool) throws {
         guard owner >= 501, owner != caller, !callerCanWrite,
               s.st_mode & S_IFMT == (type == .key ? S_IFREG : S_IFDIR),
-              s.st_mode & 0o7002 == 0 else { return false }
+              s.st_mode & 0o7002 == 0 else { throw Failure.unavailable }
+        let valid: Bool
         switch type {
-        case .systemDirectory: return s.st_uid == 0 && s.st_mode & 0o020 == 0
+        case .systemDirectory: valid = s.st_uid == 0 && s.st_mode & 0o020 == 0
         case .prefix, .variable:
-            return s.st_uid == owner && (s.st_mode & 0o020 == 0 || s.st_gid == 80)
-        case .channel: return s.st_uid == owner && s.st_mode & 0o7777 == 0o755
-        case .key: return s.st_uid == owner && s.st_mode & 0o7777 == 0o644 && s.st_nlink == 1 && s.st_size == 32
+            guard s.st_uid == owner else { throw Failure.unavailable }
+            if s.st_mode & 0o020 != 0 && s.st_gid != 80 {
+                throw type == .prefix ? Failure.prefixWriteGroup : Failure.varWriteGroup
+            }
+            return
+        case .channel: valid = s.st_uid == owner && s.st_mode & 0o7777 == 0o755
+        case .key: valid = s.st_uid == owner && s.st_mode & 0o7777 == 0o644 && s.st_nlink == 1 && s.st_size == 32
         }
+        guard valid else { throw Failure.unavailable }
     }
 
     private static func checkComponent(_ handle: FileHandle, _ s: stat, _ type: Component, _ owner: uid_t) throws {
@@ -90,7 +117,7 @@ enum HarnessMachinePin {
             writable = faccessat(fd, ".", W_OK, 0) == 0
             guard writable || errno == EACCES || errno == EROFS || errno == EPERM else { throw Failure.unavailable }
         }
-        guard allowed(s, type, owner: owner, caller: getuid(), callerCanWrite: writable) else { throw Failure.unavailable }
+        try checkMetadata(s, type, owner: owner, caller: getuid(), callerCanWrite: writable)
         if type == .prefix {
             let node = try ODNode(session: .default(), type: UInt32(kODNodeTypeLocalNodes))
             let attribute = kODAttributeTypeUniqueID

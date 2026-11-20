@@ -30,6 +30,7 @@ struct HarnessOwnerBoundaryTests {
         try bytes.write(to: first)
         let trusted = try read()
         precondition(trusted == bytes)
+        precondition(HarnessMachinePin.fingerprint(trusted) == "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd")
         try HarnessMachinePin.verify(bytes.map { String(format: "%02x", $0) }.joined(), published: trusted)
         precondition((try? HarnessMachinePin.verify(String(repeating: "ff", count: 32), published: trusted)) == nil)
         let second = try empty("usr/local/var/agent-machine")
@@ -50,10 +51,21 @@ struct HarnessOwnerBoundaryTests {
         s.st_uid = 550; s.st_gid = 80; s.st_nlink = 1; s.st_size = 32
         func allows(_ type: HarnessMachinePin.Component, _ mode: mode_t, writable: Bool = false) -> Bool {
             s.st_mode = mode
-            return HarnessMachinePin.allowed(s, type, owner: 550, caller: 551, callerCanWrite: writable)
+            return (try? HarnessMachinePin.checkMetadata(s, type, owner: 550, caller: 551, callerCanWrite: writable)) != nil
         }
         precondition(allows(.prefix, S_IFDIR | 0o775))
         precondition(!allows(.prefix, S_IFDIR | 0o775, writable: true))
+        s.st_gid = 0
+        for (component, location) in [(HarnessMachinePin.Component.prefix, "prefix"), (.variable, "var directory")] {
+            s.st_mode = S_IFDIR | 0o775
+            do {
+                try HarnessMachinePin.checkMetadata(s, component, owner: 550, caller: 551, callerCanWrite: false)
+                preconditionFailure("accepted group-writable Homebrew parent owned by wheel")
+            } catch let failure as HarnessMachinePin.Failure {
+                precondition(failure.diagnostic == "Machine owner approval unavailable. The group-writable Homebrew \(location) must belong to the admin group. Ask the Homebrew administrator to review its group or write permissions.")
+            }
+            precondition(allows(component, S_IFDIR | 0o755))
+        }
         s.st_gid = 20
         precondition(!allows(.variable, S_IFDIR | 0o775))
         precondition(allows(.channel, S_IFDIR | 0o755))

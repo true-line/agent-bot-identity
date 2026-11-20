@@ -51,6 +51,8 @@ refused "$invalid" retry-first-enrollment 501 < /dev/null
 dd if=/dev/zero bs=2049 count=1 2>/dev/null | refused "$invalid" approve-pairing
 refused "$unavailable" init-owner-key < /dev/null
 refused "$unavailable" owner-public-key < /dev/null
+refused "$unavailable" check-machine-pin < /dev/null
+refused "$invalid" check-machine-pin extra < /dev/null
 refused "$unavailable" authorize-first-enrollment 501 --no-prior-enrollment < /dev/null
 if sh "$src/build.sh" "$dir/provider" 2>/dev/null; then exit 1; fi
 /usr/bin/ruby --disable-gems - "$src/install.rb" "$dir" <<'RUBY'

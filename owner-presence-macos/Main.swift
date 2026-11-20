@@ -38,6 +38,13 @@ enum OwnerPresenceMain {
     }
 
     static func run(_ args: [String]) async throws {
+        if args == ["check-machine-pin"] {
+            try OwnerExecutable.verify()
+            let key = try HarnessMachinePin.installedPublicKey()
+            let fingerprint = HarnessMachinePin.fingerprint(key)
+            try FileHandle.standardOutput.write(contentsOf: Data((fingerprint + "\n").utf8))
+            return
+        }
         if args.first == "preview-harness-launch" {
             guard args.count == 4, let action = HarnessLaunchAction(rawValue: args[1]) else { throw PresenceFailure.invalidChallenge }
             let data = try readInput(limit: 32 * 1024)
@@ -97,6 +104,7 @@ enum OwnerPresenceMain {
             let message = (error as? PresenceFailure)?.errorDescription
                 ?? (error as? FreshOwnerFailure)?.errorDescription
                 ?? (error as? FirstEnrollmentError)?.description
+                ?? (error as? HarnessMachinePin.Failure)?.diagnostic
                 ?? "Machine owner operation unavailable."
             FileHandle.standardError.write(Data((message + "\n").utf8))
             // EX_UNAVAILABLE distinguishes an unusable provider or credential

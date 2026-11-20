@@ -58,6 +58,23 @@ Use `retire` to display the original installation ID and digest as well.
 The preview checks plan contents against the supplied digest. Authentication
 of the lookup occurs on HQ. Preview requires no owner key and issues no proof.
 
+## Check the installed Machine public key
+
+From the daily account, the installed owner CLI can check the Homebrew channel
+before a timed review. This optional command prints the SHA-256 fingerprint of
+the raw Machine public key. The administrator can compare it with the
+`fingerprint` from `managed-machine daemon verify-identity`.
+
+```sh
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence check-machine-pin
+```
+
+The check reads only public installation data. The owner Keychain stays closed.
+Approval still checks the key against the signed challenge. If the command reports
+a group-writable Homebrew prefix or `var` directory, the Homebrew administrator
+can inspect its group and write permissions. Group-writable parents must belong
+to the `admin` group.
+
 ## Approve a paired harness launch rule
 
 On a Mac enrolled with this flat helper, the dedicated HQ exports one
