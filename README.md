@@ -912,8 +912,12 @@ In the daily owner’s Terminal, `id -u` gives that account’s UID. After check
 that the Mac has no prior or archived enrollment, the administrator runs
 `sudo /Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence authorize-first-enrollment UID --no-prior-enrollment`.
 This gives the selected account a five-minute first-enrollment permit.
-The daily owner runs `agent-bot machine init-owner-key` in their login
-session. The CLI creates a non-exportable Secure Enclave P-256 key. Its
+With the organization's approved Developer ID team configured in
+`settings.keydTeamId`, the daily owner runs `agent-bot machine init-owner-key`
+in their login session. A daily account that has not loaded the organization
+profile can use the fixed executable directly as shown in the
+[first-enrollment procedure](owner-presence-macos/FIRST-ENROLLMENT.md).
+The CLI creates a non-exportable Secure Enclave P-256 key. Its
 device-bound reference is stored in the owner's login Keychain with access
 restricted to the signed executable. The command returns only the public key.
 If the permit expires or initialization stops before a key exists, the same
@@ -924,8 +928,7 @@ with the same UID and declaration. Read an already-created key with
 The prefix administrator independently verifies the public key and pins it
 with `managed-machine daemon pair --pin-owner KEY`. To read the same public
 key again, use `agent-bot machine owner-public-key`. An older owner key or
-pairing requires its own continuity procedure. Keep the existing pin. Full
-operator steps are in [First owner enrollment on macOS](owner-presence-macos/FIRST-ENROLLMENT.md).
+pairing requires its own continuity procedure. Keep the existing pin.
 
 - `agent-bot machine review-first-hq FILE` opens the one-time local plan
   review. Compare the Machine fingerprint with the administrator's independent
