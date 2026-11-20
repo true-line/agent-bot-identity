@@ -10,7 +10,7 @@
 // launch here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.join(import.meta.dirname, '..');
@@ -92,6 +92,12 @@ const LAUNCH_PATHS = {
   'scripts/windows-supervisor-acceptance.mjs': [1, 'owner-run disposable native acceptance: real OS task tools and staged first-party engines only'],
   'scripts/linux-bundle/build.mjs': [2, 'build tooling'],
 };
+
+// This operator-selected helper is excluded from source release archives.
+const pilot = 'tools/private-pilot/machine-owner.mjs';
+if (existsSync(path.join(root, pilot))) {
+  LAUNCH_PATHS[pilot] = [2, 'private pilot: fixed macOS signature checks and the verified installed owner helper'];
+}
 
 function runtimeModules(dir = root, prefix = '') {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
