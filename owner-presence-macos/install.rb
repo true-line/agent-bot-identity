@@ -42,11 +42,16 @@ module OwnerHelperInstall
 
   class ReleaseVerificationError < StandardError; end
 
-  def self.verify_release(binary, team)
-    requirement = %(anchor apple generic and identifier "#{ID}" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[subject.OU] = "#{team}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and notarized)
+  def self.verify_release(binary, team, notarization: true)
+    requirement = %(anchor apple generic and identifier "#{ID}" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[subject.OU] = "#{team}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists)
     # A fresh Mac may have no local ticket for a notarized flat executable.
     # codesign can retrieve Apple's ticket during installation.
-    verified = system("/usr/bin/codesign", "--verify", "--strict", "--all-architectures", "--check-notarization",
+    options = ["--verify", "--strict", "--all-architectures"]
+    if notarization
+      options << "--check-notarization"
+      requirement += " and notarized"
+    end
+    verified = system("/usr/bin/codesign", *options,
                       "-R=" + requirement, binary, out: File::NULL, err: File::NULL)
     raise ReleaseVerificationError unless verified
   end
@@ -124,6 +129,8 @@ module OwnerHelperInstall
         end
         remaining << path
       end
+      # With the publisher record missing, verify the team on the surviving binary.
+      verify_release(binary, team, notarization: false) if remaining == [binary]
       remaining.each { |path| File.unlink(path) }
       remaining.length
     end
@@ -140,6 +147,7 @@ if $PROGRAM_NAME == __FILE__
       OwnerHelperInstall.install(*ARGV)
     end
   rescue OwnerHelperInstall::ReleaseVerificationError
+    abort("Owner helper removal refused. Check the installed signature and approved publisher.") if ARGV.first == "--uninstall"
     abort("Could not verify the approved Developer ID signature and Apple notarization. Check the release and connectivity to Apple.")
   rescue StandardError
     action = ARGV.first == "--uninstall" ? "removal" : "installation"

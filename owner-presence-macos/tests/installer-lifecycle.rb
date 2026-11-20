@@ -9,8 +9,8 @@ Dir.mktmpdir("owner-installer-lifecycle-", "/private/tmp") do |scratch|
   OwnerHelperInstall.const_set(:DIR, target)
   # Hosted runners have no release identity. Only signature verification is
   # stubbed here. File ownership, hashing, locking and publication are real.
-  def OwnerHelperInstall.verify_release(_path, _team)
-    true
+  def OwnerHelperInstall.verify_release(_path, team, notarization: true)
+    raise OwnerHelperInstall::ReleaseVerificationError unless team == "ABCDE12345"
   end
   team = "ABCDE12345"
   source = File.join(scratch, "payload")
@@ -31,6 +31,14 @@ Dir.mktmpdir("owner-installer-lifecycle-", "/private/tmp") do |scratch|
   [binary, pin].each do |missing|
     install.call
     File.unlink(missing)
+    if missing == pin
+      begin
+        OwnerHelperInstall.uninstall("OTHER12345", digest)
+        abort("different publisher accepted")
+      rescue OwnerHelperInstall::ReleaseVerificationError
+        raise unless File.file?(binary)
+      end
+    end
     raise unless remove.call == 1 && remove.call.zero?
   end
 
