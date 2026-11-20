@@ -12,8 +12,14 @@ func approveOwnerRequest(_ request: OwnerRequest, existingReference: Data) async
     try request.checkExpiry(now: Int64(Date().timeIntervalSince1970))
     let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: existingReference,
                                                           authenticationContext: context)
-    guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: request.approvalReason)
-    else { throw PresenceFailure.declined }
+    do {
+        guard try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: request.approvalReason)
+        else { throw PresenceFailure.incomplete }
+    } catch let error as LAError where error.code == .userCancel {
+        throw PresenceFailure.declined
+    } catch let error as LAError where [.appCancel, .systemCancel, .authenticationFailed].contains(error.code) {
+        throw PresenceFailure.incomplete
+    }
     try request.checkExpiry(now: Int64(Date().timeIntervalSince1970))
     let signature = try key.signature(for: request.signedBytes)
     try request.checkExpiry(now: Int64(Date().timeIntervalSince1970))

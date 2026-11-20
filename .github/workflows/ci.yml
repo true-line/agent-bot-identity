@@ -161,8 +161,10 @@ jobs:
         run: node --test --test-name-pattern="^machine attest" tests/machine-client.test.mjs
       - name: Run the owner-decision journal tests on Darwin
         run: node --test tests/owner-decision-journal*.test.mjs
-      - name: Verify the macOS pairing and first-HQ challenge transcripts
-        run: sh owner-presence-macos/tests/hosted.sh
+      - name: Verify macOS owner transcripts and first-enrollment handoff
+        env:
+          OWNER_PERMIT_RUNNER: ${{ runner.environment }}
+        run: sh owner-presence-macos/tests/hosted.sh --hosted-first-enrollment
 
   codeql:
     name: Advanced CodeQL

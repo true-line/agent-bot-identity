@@ -17,7 +17,7 @@ window.addEventListener('pagehide', () => {
 }, { once: true });
 async function readResponse(verb, body) {
   const response = await post(verb, body);
-  if (response.status === 503) throw new Error('This Identity version has no authorized Machine owner-presence provider. Continue using any existing pairing. New approvals must wait for a compatible provider.');
+  if (response.status === 503) throw new Error('The signed Machine owner helper or its protected credential is unavailable. Keep the existing owner pin.');
   if (!response.ok) throw new Error('The review was refused, closed or expired. No proof was returned.');
   return response.json();
 }

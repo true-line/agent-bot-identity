@@ -2258,11 +2258,11 @@ test('first-HQ review and signed proof belong to one direct, authorized web sess
     assert.equal(proof.public_key, pub);
     assert.equal((await post('approve', review)).status, 409);
     const { approveFirstHQ } = await import('../identity/machine-owner-presence.mjs');
-    onSign = () => approveFirstHQ(challenge, { platform: 'darwin' });
+    onSign = () => approveFirstHQ(challenge, { platform: 'darwin', checkPath() { throw new Error('missing fixture'); } });
     const unsupported = await preview();
     const unavailable = await post('approve', unsupported);
     assert.equal(unavailable.status, 503);
-    assert.match((await unavailable.json()).error, /New approvals must wait for a compatible provider/);
+    assert.match((await unavailable.json()).error, /signed Machine owner helper or its protected credential is unavailable/);
     assert.equal((await post('approve', unsupported)).status, 409);
     onSign = () => { throw new Error('canceled'); };
     assert.equal((await post('approve', await preview())).status, 409);

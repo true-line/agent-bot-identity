@@ -30,10 +30,10 @@ Use this reference for setup, minting, diagnostics, and identity repair.
 The prefix administrator transfers one Machine challenge to the signed-in daily owner.
 From the daily owner's terminal run `agent-bot machine review-first-hq FILE`.
 The local Approvals page shows each step and the Machine fingerprint for
-independent comparison. This version can display the plan, but it has no
-authorized provider for a fresh owner proof. Keep the existing owner pin.
-New approvals require a compatible provider for that pin. The review closes
-after use or expiry and can be opened before HQ pairing.
+independent comparison. A fresh enrollment uses the signed owner CLI and the
+administrator's separately pinned public key. Request a fresh Touch ID or
+login-password approval for the exact plan. Closing the review or letting
+it expire discards the request. Keep existing owner pins during an upgrade.
 
 ## Attest an existing local machine pairing
 

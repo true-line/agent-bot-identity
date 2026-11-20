@@ -2,12 +2,13 @@ import CryptoKit
 import Foundation
 
 enum PresenceFailure: Error, LocalizedError {
-    case invalidChallenge, expired, declined
+    case invalidChallenge, expired, declined, incomplete
 
     var errorDescription: String? {
         switch self {
         case .invalidChallenge: return "Invalid Machine owner challenge."
         case .declined: return "Owner approval was declined."
+        case .incomplete: return "Owner authentication did not complete."
         case .expired: return "Machine owner challenge expired."
         }
     }

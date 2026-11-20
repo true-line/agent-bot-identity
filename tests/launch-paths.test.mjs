@@ -59,6 +59,7 @@ const LAUNCH_PATHS = {
   'keyd-supervisor.mjs': [1, 'OS tool: launchctl'],
   'identity/owner-approval.mjs': [1, 'OS tool: osascript'],
   'machine-first-hq-review.mjs': [1, 'owner-run: open the one-time loopback review in the default browser via /usr/bin/open'],
+  'identity/machine-owner-presence.mjs': [3, 'macOS: fixed system codesign and fixed installed Machine owner CLI, with a bounded command set and clean environment'],
   'identity/owner-presence.mjs': [2, 'OS tool: codesign, then the verified keyd binary'],
   'detect-harness.mjs': [3, 'OS tool: ps and codesign'],
   'process-ownership.mjs': [1, 'OS tool: ps'],
