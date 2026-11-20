@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { firstHQSignedBytes, reviewFirstHQ, verifiedFirstHQProof } from '../machine-first-hq.mjs';
+import { showFirstHQReview } from '../web/first-hq.js';
 import { membersPlanCanonical } from '../machine-members.mjs';
 
 const transfer = JSON.parse(readFileSync(new URL('./fixtures/first-hq-challenge.json', import.meta.url)));
@@ -22,6 +23,42 @@ test('the Go first-HQ plan and exact signed bytes interoperate', () => {
     owner: 'operator', content: '{"plist":"<key>Label</key>"}', detail: 'verify the approved release' };
   const changed = withPlan({ ...plan, steps: [...plan.steps, service] });
   assert.deepEqual(reviewFirstHQ(changed, 1000).plan.steps[1], service);
+});
+
+test('first-HQ review displays the complete planned runtime directory alongside the service', (t) => {
+  function element(tag) {
+    return { tag, children: [], append(...nodes) { this.children.push(...nodes); },
+      replaceChildren(...nodes) { this.children = nodes; }, addEventListener() {} };
+  }
+  globalThis.document = { createElement: element };
+  t.after(() => { delete globalThis.document; });
+
+  const service = { kind: 'service', target: 'ai.true-line.agent-bot-hq', action: 'create',
+    owner: 'operator', detail: 'Install the reviewed service' };
+  const record = { plist: '<plist/>', service: { release_dir: '/Library/Example/HQ' }, owner_uid: 501 };
+  function displayedSteps(steps) {
+    const box = element('section');
+    showFirstHQReview(box, reviewFirstHQ(withPlan({ ...plan, steps }), 1000));
+    return box.children.find(node => node.tag === 'ol').children;
+  }
+  function serviceFields(serviceRecord) {
+    const steps = displayedSteps([plan.steps[0], { ...service, content: JSON.stringify(serviceRecord) }]);
+    return steps[1].children.map(node => node.textContent);
+  }
+
+  assert.equal(displayedSteps(plan.steps).length, 1);
+  const legacy = serviceFields(record);
+  assert.ok(legacy.includes(record.plist));
+  assert.ok(!legacy.includes('HQ runtime directory'));
+  for (const action of ['create', 'none']) {
+    const directory = { path: '/Library/Application Support/ai.true-line.agent-bot-hq',
+      action, owner: 'root', group: 'wheel', mode: '0755' };
+    const fields = serviceFields({ ...record, runtime_directory: directory });
+    const index = fields.indexOf('HQ runtime directory');
+    assert.ok(index >= 0, 'the service step must label the planned directory');
+    assert.deepEqual(JSON.parse(fields[index + 1]), directory);
+    assert.ok(fields.includes(record.plist));
+  }
 });
 
 test('refuses altered, noncanonical, replayed and broader first-HQ inputs', () => {
