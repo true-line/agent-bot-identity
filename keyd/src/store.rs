@@ -2,8 +2,8 @@
 //! keyd itself with an access whose every entry names keyd's own code, by its
 //! designated requirement (Team ID and identifier for a Developer ID build).
 //! Any other reader, `security` and `node` included, gets the system's
-//! allow/deny prompt instead of a silent read, and an update signed by the
-//! same team keeps access. Leaving an item to the framework's default access
+//! allow/deny prompt instead of a silent read. A signed update keeps access
+//! when its complete designated requirement matches the stored requirement. Leaving an item to the framework's default access
 //! is not enough: that default trusts any application to write the value, so
 //! any process in this account could replace a key without a prompt (#753).
 //! See [`keychain`] for what an access list does and does not stop.
@@ -620,10 +620,7 @@ pub mod keychain {
             path: *const std::os::raw::c_char,
             app: *mut SecTrustedApplicationRef,
         ) -> i32;
-        fn SecTrustedApplicationCopyData(
-            app: SecTrustedApplicationRef,
-            data: *mut CFDataRef,
-        ) -> i32;
+        fn keyd_copy_trusted_identity(app: SecTrustedApplicationRef) -> CFDataRef;
         fn SecAccessCreate(
             descriptor: CFStringRef,
             trusted: CFArrayRef,
@@ -733,15 +730,15 @@ pub mod keychain {
         Ok(unsafe { CFType::wrap_under_create_rule(app as CFTypeRef) })
     }
 
-    /// The record the framework matches a calling process against: keyd's
-    /// designated requirement for a signed build, its path for an unsigned one.
+    /// Compare the complete signing requirement stored in the ACL. The
+    /// recorded pathname can change during an ordinary Homebrew upgrade.
     fn code_identity(app: CFTypeRef) -> Option<Vec<u8>> {
-        let mut data: CFDataRef = std::ptr::null();
-        // SAFETY: a live reference and a valid out-pointer.
-        if unsafe { SecTrustedApplicationCopyData(app as _, &mut data) } != 0 || data.is_null() {
+        // SAFETY: the trusted application is live and the bridge returns an
+        // owned CFData or NULL for an unrecognized subject.
+        let data = unsafe { keyd_copy_trusted_identity(app as _) };
+        if data.is_null() {
             return None;
         }
-        // SAFETY: the new data is ours, and CFData releases it.
         Some(unsafe { CFData::wrap_under_create_rule(data as _) }.to_vec())
     }
 
@@ -905,13 +902,10 @@ pub mod keychain {
         } else {
             // SAFETY: the new array is ours, and CFArray releases it.
             let apps = unsafe { CFArray::<*const c_void>::wrap_under_create_rule(apps as _) };
-            let trusted = apps.get_all_values();
-            Some(
-                !trusted.is_empty()
-                    && trusted
-                        .iter()
-                        .all(|app| code_identity(*app).as_deref() == Some(keyd)),
-            )
+            Some(matches!(
+                apps.get_all_values().as_slice(), [app]
+                    if code_identity(*app).as_deref() == Some(keyd)
+            ))
         };
         let Some(authorizations) = authorization_names(acl) else {
             return false;
@@ -1373,6 +1367,97 @@ pub mod keychain {
                 }
                 None => Ok(false),
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod upgrade_tests {
+        use super::*;
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::Path;
+
+        fn trusted(path: &Path) -> CFType {
+            let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+            let mut app = std::ptr::null_mut();
+            // SAFETY: path is NUL terminated and app is a valid out-pointer.
+            assert_eq!(
+                unsafe { SecTrustedApplicationCreateFromPath(path.as_ptr(), &mut app) },
+                0
+            );
+            assert!(!app.is_null());
+            unsafe { CFType::wrap_under_create_rule(app as _) }
+        }
+
+        #[test]
+        fn stored_entry_must_name_exactly_one_application() {
+            let dir = crate::paths::tests::short_temp_dir("acl-count");
+            let old_path = dir.join("previous-keg");
+            let active = Path::new("/usr/bin/true");
+            std::fs::copy(active, &old_path).unwrap();
+            let apps = [trusted(active), trusted(&old_path)];
+            let expected = code_identity(apps[0].as_concrete_TypeRef()).unwrap();
+            assert_eq!(
+                Some(&expected),
+                code_identity(apps[1].as_concrete_TypeRef()).as_ref()
+            );
+            let name = CFString::new("synthetic record");
+            for count in [1, 2] {
+                let refs: Vec<_> = apps[..count]
+                    .iter()
+                    .map(|app| app.as_concrete_TypeRef())
+                    .collect();
+                let applications = CFArray::from_copyable(&refs);
+                let mut access = std::ptr::null_mut();
+                let title = name.as_concrete_TypeRef() as CFStringRef;
+                let list = applications.as_concrete_TypeRef() as CFArrayRef;
+                // Construct an actual source ACL with the requested application count.
+                assert_eq!(unsafe { SecAccessCreate(title, list, &mut access) }, 0);
+                let _access = unsafe { CFType::wrap_under_create_rule(access as _) };
+                let mut entry = std::ptr::null_mut();
+                assert_eq!(
+                    unsafe { SecACLCreateWithSimpleContents(access, list, title, 0, &mut entry) },
+                    0
+                );
+                let _entry = unsafe { CFType::wrap_under_create_rule(entry as _) };
+                let mut recorded = std::ptr::null();
+                let mut description = std::ptr::null();
+                let mut prompt = 0;
+                assert_eq!(
+                    unsafe {
+                        SecACLCopyContents(entry, &mut recorded, &mut description, &mut prompt)
+                    },
+                    0
+                );
+                let recorded =
+                    unsafe { CFArray::<*const c_void>::wrap_under_create_rule(recorded as _) };
+                if !description.is_null() {
+                    let _ = super::cf_text_owned(description);
+                }
+                assert_eq!(recorded.len() as usize, count);
+                assert_eq!(entry_is_keyd_or_system(entry, &expected, None), count == 1);
+            }
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+
+        #[test]
+        fn signed_requirement_survives_removal_of_previous_keg() {
+            let dir = crate::paths::tests::short_temp_dir("acl-upgrade");
+            let old_path = dir.join("prior");
+            let active = Path::new("/usr/bin/true");
+            std::fs::copy(active, &old_path).unwrap();
+            let prior = trusted(&old_path);
+            std::fs::remove_file(old_path).unwrap();
+            let prior = code_identity(prior.as_concrete_TypeRef()).unwrap();
+            assert_eq!(
+                prior,
+                code_identity(trusted(active).as_concrete_TypeRef()).unwrap()
+            );
+            assert_ne!(
+                prior,
+                code_identity(trusted(Path::new("/usr/bin/false")).as_concrete_TypeRef()).unwrap()
+            );
+            std::fs::remove_dir(dir).unwrap();
         }
     }
 
@@ -1901,6 +1986,52 @@ pub mod tests {
         delete_keychain(&keychain);
         let _ = std::fs::remove_dir_all(&dir);
         result.unwrap();
+    }
+
+    /// Write and then read the protected grant through independent processes.
+    /// The writer's executable is gone before the reader opens the Keychain.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn grant_key_survives_keg_replacement() {
+        use std::{env, fs, process::Command};
+        if !keychain_tests_enabled() {
+            return;
+        }
+        let executable = env::current_exe().unwrap();
+        if let Some(mode) = env::var_os("KEYD_TEST_UPGRADE_CHILD") {
+            // Only copies under this fixture's own versioned layout may act.
+            let keg = executable.parent().unwrap();
+            assert_eq!(keg.file_name().unwrap(), mode);
+            let path = keg.parent().unwrap().join("keyd-test.keychain-db");
+            assert!(path.is_file());
+            let store = Store::new(Box::new(keychain::Keychain::at(path)));
+            if mode == "old" {
+                store.pin_key(&[42; 32]).unwrap();
+            } else {
+                assert_eq!(mode, "new");
+                assert!(store.pinned_key().unwrap() == Some([42; 32]));
+            }
+            return;
+        }
+        with_temporary_keychain(|path| {
+            let root = path.parent().unwrap();
+            for version in ["old", "new"] {
+                let keg = root.join(version);
+                fs::create_dir(&keg).unwrap();
+                let binary = keg.join("agent-bot-keyd-test");
+                fs::copy(&executable, &binary).unwrap();
+                let status = Command::new(&binary)
+                    .args([
+                        "store::tests::grant_key_survives_keg_replacement",
+                        "--exact",
+                    ])
+                    .env("KEYD_TEST_UPGRADE_CHILD", version)
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "{version} keg failed");
+                fs::remove_dir_all(keg).unwrap();
+            }
+        });
     }
 
     #[cfg(target_os = "macos")]

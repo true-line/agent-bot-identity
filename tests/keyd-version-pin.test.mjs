@@ -59,6 +59,25 @@ test('keyd status text names a running keyd that reports no version', async (t) 
   assert.deepEqual([result.version, result.versionMatches], [null, null]);
 });
 
+test('keyd status directs a live external helper mismatch to its owning package', async (t) => {
+  const { home, env } = fixture(t);
+  const { ownerSocket } = keydPaths({ env, home });
+  mkdirSync(path.dirname(ownerSocket), { recursive: true });
+  const server = createServer((connection) => connection.once('data', (chunk) => {
+    const request = JSON.parse(String(chunk));
+    assert.equal(request.method, 'owner/status');
+    connection.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pinned: true, version: '0.2.1' } }) + '\n');
+  }));
+  await new Promise((resolve) => server.listen(ownerSocket, resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  let text = '';
+  const status = await keydCommand(['status'], { home, env, write: (chunk) => { text += chunk; } });
+  assert.equal(status.versionMatches, false);
+  assert.equal(status.bin, null);
+  assert.match(text, /brew upgrade true-line\/agent-bot-machine\/managed-machine/);
+  assert.doesNotMatch(text, /agent-bot keyd install/);
+});
+
 const probe = (status) => async () => ({ bin: null, pinned: true, expectedVersion: KEYD_PINNED_VERSION, ...status });
 
 test('doctor skips keyd.version when no keyd is installed', async () => {
@@ -78,8 +97,12 @@ test('doctor warns about another keyd version with the update to make', async ()
   assert.equal(check.status, 'warning');
   assert.equal(check.code, 'keyd-version-mismatch');
   assert.match(check.message, new RegExp(`0\\.1\\.0 is running; this agent-bot is pinned to ${KEYD_PINNED_VERSION.replaceAll('.', '\\.')}`));
-  assert.match(check.action, /update the app that ships keyd/);
-  assert.match(check.action, /agent-bot keyd install --bin PATH/);
+  assert.match(check.action, /Homebrew prefix owner/);
+  assert.match(check.action, /brew upgrade true-line\/agent-bot-machine\/managed-machine/);
+  assert.doesNotMatch(check.action, /agent-bot keyd install/);
+  const independent = await keydVersionCheck({ probe: probe({ running: true, version: '0.1.0', versionMatches: false, bin: '/Applications/Host.app/keyd' }) });
+  assert.match(independent.action, /independently managed/);
+  assert.match(independent.action, /agent-bot keyd install --bin PATH/);
   const silent = await keydVersionCheck({ probe: probe({ running: true, version: null, versionMatches: null }) });
   assert.equal(silent.code, 'keyd-version-mismatch');
   assert.match(silent.message, /did not report a version/);
