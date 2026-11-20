@@ -82,3 +82,16 @@ HQ's `approve --challenge-file challenge.json --proof-file owner-proof.json --so
 command for the same action. Machine consumes the challenge once. Approval and
 root application are separate operations. A historical owner key held by a
 different provider requires the existing key-continuity procedure.
+
+
+## Approve harness accounts on a paired Mac
+
+The dedicated HQ exports the saved Machine plan with `machine harness-account-provision export PLAN_ID --socket SOCKET`. Transfer the complete signed line to the daily owner. In the local desktop session, use the existing enrolled owner key:
+
+```sh
+umask 077
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  approve-harness-account-provision < challenge.json > owner-proof.json
+```
+
+Review each harness account, its numeric UID, private group and GID, its home and mode, and any broker directories. Check whether Machine will create an account, repair its home mode, or verify an existing role. After confirmation and fresh owner authentication, return the proof via the dedicated HQ's `machine harness-account-provision approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. The administrator separately applies the approved plan. Installing or retiring a launch rule requires a separate approval.
