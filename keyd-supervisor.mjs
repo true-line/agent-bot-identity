@@ -7,7 +7,8 @@
 //   agent-bot keyd uninstall [--json]            unload it (its keys stay)
 //   agent-bot keyd status [--json]               whether it answers, and the pin
 import { execFileSync } from 'node:child_process';
-import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -34,9 +35,12 @@ function launchctl(args, env) {
   return execFileSync('/bin/launchctl', args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'], env });
 }
 
+const STAGE_PREFIX = '.agent-bot-keyd-stage-';
+const STAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 const ownershipError = () => new Error('preserving the keyd LaunchAgent: its Identity installation record, plist and loaded job must agree. Manage a Machine-owned helper through its Machine installation');
 
-function optionalFile(file) {
+function optionalFile(file, expectedStage) {
   let fd;
   try { fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch (error) {
     if (error.code === 'ENOENT') return null;
@@ -44,10 +48,56 @@ function optionalFile(file) {
   }
   try {
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.uid !== process.getuid() || stat.nlink !== 1 || (stat.mode & 0o022) || stat.size > 64 * 1024) throw ownershipError();
-    return { dev: stat.dev, ino: stat.ino, text: readFileSync(fd, 'utf8') };
+    if (!stat.isFile() || stat.uid !== process.getuid() || (stat.mode & 0o022) || stat.size > 64 * 1024) throw ownershipError();
+    if (stat.nlink !== 1 && !(expectedStage && stat.nlink === 2)) throw ownershipError();
+    const text = readFileSync(fd, 'utf8');
+    if (stat.nlink === 2) {
+      if (!expectedStage(text)) throw ownershipError();
+      finishPublication(file, stat);
+      if (fstatSync(fd).nlink !== 1) throw ownershipError();
+    }
+    return { dev: stat.dev, ino: stat.ino, text };
   } finally {
     closeSync(fd);
+  }
+}
+
+// Stage complete bytes in the destination directory. link(2) publishes them
+// atomically and refuses an occupied name even if it appeared after inspection.
+function publishNewFile(file, text, mode, previous = null) {
+  const stage = path.join(path.dirname(file), STAGE_PREFIX + randomUUID());
+  const fd = openSync(stage, 'wx', mode);
+  try {
+    writeFileSync(fd, text);
+    fsyncSync(fd);
+    if (previous !== null) {
+      checkFile(file, previous);
+      rmSync(file);
+    }
+    linkSync(stage, file);
+  } finally {
+    try {
+      const held = fstatSync(fd);
+      const named = lstatSync(stage, { throwIfNoEntry: false });
+      if (named?.dev === held.dev && named.ino === held.ino) rmSync(stage);
+    } finally {
+      closeSync(fd);
+    }
+  }
+}
+
+// After a crash between link and unlink, retire only our staging twin. All
+// ownership and content checks on the live name still run on a single link.
+function finishPublication(file, stat) {
+  const dir = path.dirname(file);
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith(STAGE_PREFIX) || !STAGE_ID.test(name.slice(STAGE_PREFIX.length))) continue;
+    const stage = path.join(dir, name);
+    const twin = lstatSync(stage, { throwIfNoEntry: false });
+    if (twin?.isFile() && twin.nlink === 2 && twin.dev === stat.dev && twin.ino === stat.ino) {
+      rmSync(stage);
+      return;
+    }
   }
 }
 
@@ -56,15 +106,18 @@ function checkFile(file, expected) {
   if (actual?.dev !== expected?.dev || actual?.ino !== expected?.ino || actual?.text !== expected?.text) throw ownershipError();
 }
 
-function registration(file) {
-  const record = optionalFile(file);
-  if (record === null) return null;
+function parseRecord(text) {
   let value;
-  try { value = JSON.parse(record.text); } catch { throw ownershipError(); }
+  try { value = JSON.parse(text); } catch { throw ownershipError(); }
   const label = value?.label ?? KEYD_LABEL;
   if (typeof value?.bin !== 'string' || !path.isAbsolute(value.bin) ||
       typeof label !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(label)) throw ownershipError();
   return { bin: value.bin, label };
+}
+
+function registration(file, expectedStage) {
+  const record = optionalFile(file, expectedStage);
+  return record === null ? null : parseRecord(record.text);
 }
 
 function plistFor(label, bin, state) {
@@ -99,11 +152,14 @@ function changeKeyd({ bin, env, home, exec }) {
   const pendingPath = paths.record + '.pending';
   return withLock(path.join(home, '.agent-bot-keyd-lifecycle.lock'), 'keyd lifecycle', () => {
     const saved = registration(paths.record);
-    const pending = registration(pendingPath);
+    const pending = registration(pendingPath, text => {
+      const record = parseRecord(text);
+      return text === JSON.stringify(record) + '\n' && (!install || (record.bin === bin && record.label === keydLabel(env)));
+    });
     const label = install ? keydLabel(env) : saved?.label ?? pending?.label ?? keydLabel(env);
     if ((saved && saved.label !== label) || (pending && (pending.label !== label || install && pending.bin !== bin))) throw ownershipError();
     const unit = unitPath(label, home);
-    const previous = optionalFile(unit);
+    const previous = optionalFile(unit, pending && (text => text === plistFor(label, pending.bin, state)));
     const owner = [saved, pending].find(record => record && previous?.text === plistFor(label, record.bin, state));
     if (previous !== null && !owner) throw ownershipError();
     const domain = `gui/${process.getuid()}`;
@@ -139,11 +195,8 @@ function changeKeyd({ bin, env, home, exec }) {
     mkdirSync(path.dirname(unit), { recursive: true });
     // Only the committed record enables keyd's relay. Keep a separate intent
     // so a failed or interrupted bootstrap can retry the exact owned unit.
-    if (!pending) writeFileSync(pendingPath, JSON.stringify({ bin, label })+'\n', { flag: 'wx', mode: 0o600 });
-    if (changed) {
-      if (previous !== null) rmSync(unit);
-      writeFileSync(unit, desired, { mode: 0o644, flag: 'wx' });
-    }
+    if (!pending) publishNewFile(pendingPath, JSON.stringify({ bin, label })+'\n', 0o600);
+    if (changed) publishNewFile(unit, desired, 0o644, previous);
     const installed = changed ? optionalFile(unit) : previous;
     if (installed?.text !== desired) throw ownershipError();
     if (!skipLoad && (!loaded || changed)) exec(['bootstrap', domain, unit], env);

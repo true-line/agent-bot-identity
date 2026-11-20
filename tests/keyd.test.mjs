@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -212,6 +213,73 @@ test('a unit that fails to load leaves no install record behind', (t) => {
   const exec = (args) => { if (args[0] === 'print') throw Object.assign(new Error('absent'), { status: 113 }); throw new Error('Bootstrap failed: 5: Input/output error'); };
   assert.throws(() => installKeyd({ bin, env: loading, home, platform: 'darwin', exec }), /Bootstrap failed/);
   assert.equal(readKeydRecord({ env, home }), null, 'no record, so the daemon injects no relay');
+});
+
+test('interrupted staging leaves no partial keyd registration or plist and retries normally', t => {
+  const { env, home } = fixture(t);
+  const bin = path.join(home, 'fixture-keyd');
+  writeFileSync(bin, 'inert');
+  const opts = { env, home, bin, platform: 'darwin', exec: absentKeydJob };
+  const paths = keydPaths({ env, home });
+  const pending = paths.record + '.pending';
+  const unit = path.join(home, 'Library', 'LaunchAgents', 'fixture.keyd.plist');
+  opts.env = { ...env, AGENT_BOT_KEYD_SERVICE_LABEL: 'fixture.keyd' };
+
+  // Fail after writing one byte of each staging file before its link, then
+  // separately recreate the on-disk state of a process stopped after link.
+  const write = fs.writeFileSync;
+  for (const [file, failOn] of [[pending, 1], [unit, 2]]) {
+    let calls = 0;
+    fs.writeFileSync = (fd, data, ...args) => {
+      if (typeof fd === 'number' && ++calls === failOn) {
+        write(fd, data.slice(0, 1));
+        throw Object.assign(new Error('staging failed'), { code: 'ENOSPC' });
+      }
+      return write(fd, data, ...args);
+    };
+    syncBuiltinESMExports();
+    try { assert.throws(() => installKeyd(opts), { code: 'ENOSPC' }); }
+    finally { fs.writeFileSync = write; syncBuiltinESMExports(); }
+    assert.equal(existsSync(file), false);
+    assert.equal(readKeydRecord({ env, home }), null);
+  }
+  assert.ok(existsSync(pending));
+  const interrupted = { ...opts, env: { ...opts.env, AGENT_BOT_SUPERVISOR_SKIP_LOAD: '' },
+    exec: ([op]) => { if (op === 'print') return absentKeydJob(); throw new Error('bootstrap paused'); } };
+  assert.throws(() => installKeyd(interrupted), /bootstrap paused/);
+  const stage = file => path.join(path.dirname(file), '.agent-bot-keyd-stage-aaaaaaaa-aaaa-4aaa-baaa-aaaaaaaaaaaa');
+  for (const file of [pending, unit]) linkSync(file, stage(file));
+  const ordinaryAlias = path.join(home, 'retained-link');
+  linkSync(unit, ordinaryAlias);
+  assert.throws(() => installKeyd(opts), /preserving the keyd LaunchAgent/);
+  assert.ok(existsSync(ordinaryAlias));
+  assert.ok(existsSync(stage(unit)));
+  rmSync(ordinaryAlias);
+  installKeyd(opts);
+  assert.equal(statSync(unit).nlink, 1);
+  assert.equal(statSync(paths.record).nlink, 1);
+  assert.deepEqual(readKeydRecord({ env, home }), { bin, label: 'fixture.keyd' });
+  for (const file of [pending, unit]) assert.equal(existsSync(stage(file)), false);
+});
+
+test('keyd publication preserves a destination that appears before the exclusive link', t => {
+  const { env, home } = fixture(t);
+  const bin = path.join(home, 'fixture-keyd');
+  writeFileSync(bin, 'inert');
+  const unit = path.join(home, 'Library', 'LaunchAgents', 'fixture.keyd.plist');
+  const opts = { env: { ...env, AGENT_BOT_KEYD_SERVICE_LABEL: 'fixture.keyd' },
+    home, bin, platform: 'darwin', exec: absentKeydJob };
+  const link = fs.linkSync;
+  fs.linkSync = (stage, destination) => {
+    if (destination === unit) writeFileSync(unit, 'separately installed', { flag: 'wx' });
+    return link(stage, destination);
+  };
+  syncBuiltinESMExports();
+  try { assert.throws(() => installKeyd(opts), { code: 'EEXIST' }); }
+  finally { fs.linkSync = link; syncBuiltinESMExports(); }
+  assert.throws(() => installKeyd(opts), /preserving the keyd LaunchAgent/);
+  assert.equal(readFileSync(unit, 'utf8'), 'separately installed');
+  assert.equal(readKeydRecord({ env, home }), null);
 });
 
 test('uninstall removes the unit under the label install saved', (t) => {
