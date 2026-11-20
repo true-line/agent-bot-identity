@@ -34,6 +34,10 @@ if [ "$#" -gt 0 ]; then
     fixture=$(/usr/bin/sudo -n /usr/bin/mktemp -d /private/tmp/owner-enrollment-ci.XXXXXXXX)
     trap '/usr/bin/sudo -n /bin/rm -rf "$fixture"; /bin/rm -rf "$dir"' EXIT
     /usr/bin/sudo -n /usr/bin/install -o root -g wheel -m 0555 "$dir/permit-account-tests" "$fixture/check"
+    /usr/bin/sudo -n /usr/bin/install -o root -g wheel -m 0444 "$src/install.rb" "$fixture/install.rb"
+    /usr/bin/sudo -n /usr/bin/install -d -o root -g wheel -m 0700 "$fixture/tests"
+    /usr/bin/sudo -n /usr/bin/install -o root -g wheel -m 0444 "$src/tests/installer-lifecycle.rb" "$fixture/tests/installer-lifecycle.rb"
+    /usr/bin/sudo -n /usr/bin/ruby --disable-gems "$fixture/tests/installer-lifecycle.rb"
     /usr/bin/sudo -n /bin/chmod 0755 "$fixture"
     /usr/bin/sudo -n "$fixture/check" issue "$fixture" "$uid"
     "$fixture/check" use "$fixture" "$uid"

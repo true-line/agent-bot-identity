@@ -928,7 +928,8 @@ with the same UID and declaration. Read an already-created key with
 The prefix administrator independently verifies the public key and pins it
 with `managed-machine daemon pair --pin-owner KEY`. To read the same public
 key again, use `agent-bot machine owner-public-key`. An older owner key or
-pairing requires its own continuity procedure. Keep the existing pin.
+pairing requires its own continuity procedure. Keep the existing pin. To remove
+the installed owner helper, follow [Remove the owner CLI](owner-presence-macos/FIRST-ENROLLMENT.md#remove-the-owner-cli).
 
 - `agent-bot machine review-first-hq FILE` opens the one-time local plan
   review. Compare the Machine fingerprint with the administrator's independent

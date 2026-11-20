@@ -27,3 +27,13 @@ For the browser-based first-HQ plan review, load the organization's approved Dev
 If a grant expires or initialization stops after consuming the grant, the administrator checks the same enrollment history again. When the host remains unused, the administrator may run `retry-first-enrollment UID --no-prior-enrollment` at the same installed path with `sudo`. It issues a new one-use grant only for the originally selected local account, including its directory-service UUID. An unexpired, unused grant remains available to its owner. An existing authority record or ambiguous history requires operator investigation.
 
 The administrator's command checks the native Homebrew prefix owner, a second installed standard prefix, registered account homes, Machine's HQ UID and peer records, and the protected members receipt directory. Ordinary terminal pairing and the published Machine public key can exist before the first HQ owner pin. The command checks record names and metadata without reading credential contents. The administrator must account for archives, erased state and any custom installation personally. A grant records the observed state at issuance. Machine independently checks current pairing state when the administrator pins the public key.
+
+## Remove the owner CLI
+
+From an administrator-controlled copy of the reviewed installer, supply the publisher team and SHA-256 of the installed signed release.
+
+```sh
+sudo /usr/bin/ruby --disable-gems owner-presence-macos/install.rb --uninstall APPROVED_TEAM APPROVED_SHA256
+```
+
+Removal checks the executable and its publisher record before deleting either file. The command can be repeated after an interruption. The owner’s Keychain item, first-enrollment history and Machine pin remain available for continuity. Removing the helper does not authorize a fresh enrollment.

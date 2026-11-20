@@ -51,10 +51,22 @@ module OwnerHelperInstall
     raise ReleaseVerificationError unless verified
   end
 
-  def self.install(source, team, digest)
+  def self.check_administrator(team, digest)
     raise unless Process.uid.zero? && Process.euid.zero? &&
                  /\A[A-Z0-9]{10}\z/.match?(team) && /\A[0-9a-f]{64}\z/.match?(digest)
-    ["/", "/Library", DIR].each { |path| protected_path(path) }
+    ["/", "/Library"].each { |path| protected_path(path) }
+  end
+
+  def self.with_install_lock
+    File.open(DIR, File::RDONLY | File::NOFOLLOW) do |parent|
+      raise unless parent.flock(File::LOCK_EX)
+      yield
+    end
+  end
+
+  def self.install(source, team, digest)
+    check_administrator(team, digest)
+    protected_path(DIR)
     # Build both payloads in a root-only directory on the destination filesystem.
     # Publish without replacing. A retry can complete an identical partial install.
     Dir.mktmpdir(".owner-install-", DIR) do |stage|
@@ -72,25 +84,65 @@ module OwnerHelperInstall
       File.chown(0, 0, pin)
       File.chmod(0o444, pin)
       files = [[pin, File.join(DIR, ID + ".publisher"), 0o444], [binary, File.join(DIR, ID), 0o555]]
-      files.each do |file, dest, mode|
-        begin
-          matches(file, dest, mode)
-        rescue Errno::ENOENT
-          # Missing destinations are expected on first installation.
+      with_install_lock do
+        files.each do |file, dest, mode|
+          begin
+            matches(file, dest, mode)
+          rescue Errno::ENOENT
+            # Missing destinations are expected on first installation.
+          end
         end
+        files.each { |file, dest, mode| publish(file, dest, mode) }
       end
-      files.each { |file, dest, mode| publish(file, dest, mode) }
+    end
+  end
+
+  # Check all surviving parts before removing either. An interrupted removal
+  # can leave one approved part, so either name may already be absent.
+  def self.uninstall(team, digest)
+    check_administrator(team, digest)
+    begin
+      protected_path(DIR)
+    rescue Errno::ENOENT
+      return 0
+    end
+    with_install_lock do
+      binary = File.join(DIR, ID)
+      pin = binary + ".publisher"
+      remaining = []
+      [[binary, 0o555], [pin, 0o444]].each do |path, mode|
+        begin
+          protected_path(path, mode)
+        rescue Errno::ENOENT
+          next
+        end
+        if path == binary
+          raise unless (1..MAX_BYTES).cover?(File.size(path)) && Digest::SHA256.file(path).hexdigest == digest
+        else
+          expected = "#{team}\n#{digest}\n"
+          raise unless File.size(path) == expected.bytesize && File.binread(path) == expected
+        end
+        remaining << path
+      end
+      remaining.each { |path| File.unlink(path) }
+      remaining.length
     end
   end
 end
 
 if $PROGRAM_NAME == __FILE__
-  abort("usage: install.rb SIGNED_EXECUTABLE APPROVED_TEAM APPROVED_SHA256") unless ARGV.length == 3
+  abort("usage: install.rb SIGNED_EXECUTABLE|--uninstall APPROVED_TEAM APPROVED_SHA256") unless ARGV.length == 3
   begin
-    OwnerHelperInstall.install(*ARGV)
+    if ARGV.first == "--uninstall"
+      count = OwnerHelperInstall.uninstall(*ARGV.drop(1))
+      puts count.zero? ? "Owner CLI already absent." : "Removed owner CLI installation files."
+    else
+      OwnerHelperInstall.install(*ARGV)
+    end
   rescue OwnerHelperInstall::ReleaseVerificationError
     abort("Could not verify the approved Developer ID signature and Apple notarization. Check the release and connectivity to Apple.")
   rescue StandardError
-    abort("Owner helper installation refused. Check administrator ownership and the approved signed release.")
+    action = ARGV.first == "--uninstall" ? "removal" : "installation"
+    abort("Owner helper #{action} refused. Check administrator ownership and the approved signed release.")
   end
 end
