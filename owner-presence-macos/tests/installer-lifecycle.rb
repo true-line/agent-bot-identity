@@ -23,8 +23,42 @@ Dir.mktmpdir("owner-installer-lifecycle-", "/private/tmp") do |scratch|
   remove = -> { OwnerHelperInstall.uninstall(team, digest) }
 
   raise unless remove.call.zero? && !File.exist?(target)
-  Dir.mkdir(target, 0o700)
+  begin
+    OwnerHelperInstall.install(source, "OTHER12345", digest)
+    abort("unverified release created the helper directory")
+  rescue OwnerHelperInstall::ReleaseVerificationError
+    raise if File.exist?(target)
+  end
+  old_umask = File.umask(0o077)
+  begin
+    installers = 3.times.map { fork { install.call } }
+    installers.each { |pid| raise unless Process.wait2(pid)[1].success? }
+  ensure
+    File.umask(old_umask)
+  end
+  metadata = File.lstat(target)
+  raise unless metadata.directory? && metadata.uid.zero? && metadata.gid.zero? && (metadata.mode & 0o7777) == 0o755
+  original = [binary, pin].map { |path| File.lstat(path).ino }
+  [0o711, 0o700].each do |mode|
+    File.chmod(mode, target)
+    begin
+      install.call
+      abort("installed files accepted under a directory inaccessible to the daily verifier")
+    rescue RuntimeError
+      raise unless (File.lstat(target).mode & 0o7777) == mode
+      raise unless [binary, pin].map { |path| File.lstat(path).ino } == original
+    end
+  end
+  raise unless remove.call == 2 && (File.lstat(target).mode & 0o7777) == 0o700
   File.binwrite(unrelated, "keep this file")
+  File.chmod(0o777, target)
+  begin
+    install.call
+    abort("unsafe existing helper directory accepted")
+  rescue RuntimeError
+    raise unless (File.lstat(target).mode & 0o7777) == 0o777 && Dir.children(target) == ["unrelated"]
+  end
+  File.chmod(0o755, target)
   install.call
   raise unless remove.call == 2 && remove.call.zero?
   raise if File.exist?(binary) || File.exist?(pin)

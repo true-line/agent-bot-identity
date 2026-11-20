@@ -17,6 +17,7 @@ module OwnerHelperInstall
     raise unless mode ? s.file? && s.nlink == 1 && (s.mode & 0o7777) == mode : s.directory?
     listing, ok = Open3.capture2e("/bin/ls", "-lde", path)
     raise unless ok.success? && listing.lines.one?
+    s
   end
 
   def self.matches(source, destination, mode)
@@ -31,13 +32,17 @@ module OwnerHelperInstall
     extern "int renamex_np(const char *, const char *, unsigned int)"
   end
 
-  def self.publish(source, destination, mode)
-    # RENAME_EXCL creates one final name atomically. Even if the installer
-    # exits here, the protected file has the single link required at use.
-    return if DarwinRename.renamex_np(source, destination, 0x00000004).zero?
+  # RENAME_EXCL creates one final name atomically and never replaces a
+  # concurrent installation. A published file already has its final link count.
+  def self.rename_exclusive(source, destination)
+    return true if DarwinRename.renamex_np(source, destination, 0x00000004).zero?
     code = Fiddle.last_error
-    raise SystemCallError.new("publish", code) unless code == Errno::EEXIST::Errno
-    matches(source, destination, mode)
+    return false if code == Errno::EEXIST::Errno
+    raise SystemCallError.new("publish", code)
+  end
+
+  def self.publish(source, destination, mode)
+    matches(source, destination, mode) unless rename_exclusive(source, destination)
   end
 
   class ReleaseVerificationError < StandardError; end
@@ -69,12 +74,23 @@ module OwnerHelperInstall
     end
   end
 
+  def self.check_install_directory
+    # The daily user's verifier opens this root:wheel directory O_RDONLY
+    # and resolves children through it. Both read and search are required.
+    raise unless (protected_path(DIR).mode & 0o055) == 0o055
+  end
+
   def self.install(source, team, digest)
     check_administrator(team, digest)
-    protected_path(DIR)
-    # Build both payloads in a root-only directory on the destination filesystem.
-    # Publish without replacing. A retry can complete an identical partial install.
-    Dir.mktmpdir(".owner-install-", DIR) do |stage|
+    # On a fresh Mac the system helper directory can be absent. Its fixed
+    # parent was checked above. Stage there until the release is verified.
+    stage_parent = begin
+      check_install_directory
+      DIR
+    rescue Errno::ENOENT
+      File.dirname(DIR)
+    end
+    Dir.mktmpdir(".owner-install-", stage_parent) do |stage|
       binary = File.join(stage, ID)
       pin = File.join(stage, ID + ".publisher")
       File.open(source, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |input|
@@ -88,8 +104,19 @@ module OwnerHelperInstall
       File.binwrite(pin, "#{team}\n#{digest}\n")
       File.chown(0, 0, pin)
       File.chmod(0o444, pin)
+      if stage_parent != DIR
+        # Publish a complete, traversable root:wheel directory even under a
+        # restrictive admin umask. Never repair an existing directory in place.
+        helpers = File.join(stage, "helpers")
+        Dir.mkdir(helpers, 0o700)
+        File.chown(0, 0, helpers)
+        File.chmod(0o755, helpers)
+        rename_exclusive(helpers, DIR)
+        check_install_directory
+      end
       files = [[pin, File.join(DIR, ID + ".publisher"), 0o444], [binary, File.join(DIR, ID), 0o555]]
       with_install_lock do
+        check_install_directory
         files.each do |file, dest, mode|
           begin
             matches(file, dest, mode)
