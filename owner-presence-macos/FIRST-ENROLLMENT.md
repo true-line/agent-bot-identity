@@ -2,6 +2,8 @@
 
 Use this procedure only for a first owner enrollment on a Mac with a known installation history. An existing Machine owner pin, historical HQ enrollment or owner key from an earlier provider requires continuity with that owner. Keep an existing pairing in service. The procedure requires a qualified, independently verified release of the flat owner executable installed at `/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence`.
 
+On first installation, the installer may need to contact Apple for the executable’s notarization ticket. It verifies the approved Developer ID and notarization before publishing the helper.
+
 1. The administrator confirms that this Machine and the selected daily account have never had a Machine owner pairing or HQ enrollment, including custom prefixes, archived state and previous installations. The administrator identifies the selected daily account's numeric UID from its local account record. Run the following command using that UID. The declaration has local effect and expires after five minutes.
 
    ```sh

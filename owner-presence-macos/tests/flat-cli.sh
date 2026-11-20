@@ -31,6 +31,28 @@ refused "$unavailable" authorize-first-enrollment 501 --no-prior-enrollment < /d
 if sh "$src/build.sh" "$dir/provider" 2>/dev/null; then exit 1; fi
 /usr/bin/ruby --disable-gems - "$src/install.rb" "$dir" <<'RUBY'
 require File.realpath(ARGV[0])
+# The installer must request Apple's ticket on a cold Mac, while keeping the
+# exact publisher, identifier and notarization requirement on the same bytes.
+class << OwnerHelperInstall
+  attr_accessor :verification_result
+  def system(tool, *args, **io)
+    expected = ["--verify", "--strict", "--all-architectures", "--check-notarization"]
+    raise unless tool == "/usr/bin/codesign" && args.take(4) == expected && args.length == 6
+    requirement, path = args.last(2)
+    raise unless requirement.start_with?("-R=anchor apple generic and identifier \"ai.true-line.agent-bot-owner-presence\"")
+    raise unless requirement.include?('certificate leaf[subject.OU] = "ABCDE12345"') && requirement.end_with?(" and notarized")
+    raise unless path == "staged-binary" && io == {out: File::NULL, err: File::NULL}
+    verification_result
+  end
+end
+OwnerHelperInstall.verification_result = true
+OwnerHelperInstall.verify_release("staged-binary", "ABCDE12345")
+OwnerHelperInstall.verification_result = false
+begin
+  OwnerHelperInstall.verify_release("staged-binary", "ABCDE12345")
+  abort "Unverified release was accepted"
+rescue OwnerHelperInstall::ReleaseVerificationError
+end
 src = File.join(ARGV[1], "install-source")
 dst = File.join(ARGV[1], "install-destination")
 File.binwrite(src, "verified fixture")

@@ -40,6 +40,17 @@ module OwnerHelperInstall
     matches(source, destination, mode)
   end
 
+  class ReleaseVerificationError < StandardError; end
+
+  def self.verify_release(binary, team)
+    requirement = %(anchor apple generic and identifier "#{ID}" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[subject.OU] = "#{team}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and notarized)
+    # A fresh Mac may have no local ticket for a notarized flat executable.
+    # codesign can retrieve Apple's ticket during installation.
+    verified = system("/usr/bin/codesign", "--verify", "--strict", "--all-architectures", "--check-notarization",
+                      "-R=" + requirement, binary, out: File::NULL, err: File::NULL)
+    raise ReleaseVerificationError unless verified
+  end
+
   def self.install(source, team, digest)
     raise unless Process.uid.zero? && Process.euid.zero? &&
                  /\A[A-Z0-9]{10}\z/.match?(team) && /\A[0-9a-f]{64}\z/.match?(digest)
@@ -56,9 +67,7 @@ module OwnerHelperInstall
       raise unless File.size(binary) <= MAX_BYTES && Digest::SHA256.file(binary).hexdigest == digest
       File.chown(0, 0, binary)
       File.chmod(0o555, binary)
-      requirement = %(anchor apple generic and identifier "#{ID}" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[subject.OU] = "#{team}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and notarized)
-      raise unless system("/usr/bin/codesign", "--verify", "--strict", "--all-architectures", "-R=" + requirement, binary,
-                          out: File::NULL, err: File::NULL)
+      verify_release(binary, team)
       File.binwrite(pin, "#{team}\n#{digest}\n")
       File.chown(0, 0, pin)
       File.chmod(0o444, pin)
@@ -79,6 +88,8 @@ if $PROGRAM_NAME == __FILE__
   abort("usage: install.rb SIGNED_EXECUTABLE APPROVED_TEAM APPROVED_SHA256") unless ARGV.length == 3
   begin
     OwnerHelperInstall.install(*ARGV)
+  rescue OwnerHelperInstall::ReleaseVerificationError
+    abort("Could not verify the approved Developer ID signature and Apple notarization. Check the release and connectivity to Apple.")
   rescue StandardError
     abort("Owner helper installation refused. Check administrator ownership and the approved signed release.")
   end
