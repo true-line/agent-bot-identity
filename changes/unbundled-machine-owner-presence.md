@@ -1,1 +1,1 @@
-- macOS Machine pairing and first-HQ approvals now report when an authorized unbundled owner-presence provider is unavailable. Identity preserves the existing owner pin and continues to support local plan review (#1315).
+- On a never-paired Mac, the signed owner CLI can initialize a Secure Enclave owner key after explicit administrator authorization. It keeps its reference in the owner’s login Keychain and requests fresh presence for each approval. Existing owner pins retain their separate continuity procedure (#1315).
