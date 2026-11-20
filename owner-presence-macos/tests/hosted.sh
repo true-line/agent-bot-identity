@@ -7,6 +7,10 @@ trap 'rm -rf "$dir"' EXIT
     "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/OwnerKey.swift" "$src/tests/ChallengeTests.swift" -o "$dir/challenge-tests"
 "$dir/challenge-tests" "$src/../tests/fixtures/first-hq-challenge.json"
 
+/usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
+    "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/tests/HarnessLaunchPlanTests.swift" -o "$dir/harness-policy-tests"
+"$dir/harness-policy-tests" "$src/../tests/fixtures/harness-launch-install.json"
+
 target="$(/usr/bin/uname -m)-apple-macosx15.0"
 /usr/bin/xcrun --sdk macosx clang -target "$target" -Wno-deprecated-declarations -c "$src/TrustedApplication.c" -o "$dir/trusted.o"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library -D FRESH_OWNER_STORE_TESTS \
