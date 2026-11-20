@@ -21,6 +21,9 @@ import Foundation
         try checkHarnessPlan(retire, planID:current, digest:retireDigest, action:.retire)
         precondition((try? checkHarnessPlan(source, planID:prior, digest:installDigest, action:.retire)) == nil)
         precondition((try? checkHarnessPlan(retire, planID:prior, digest:retireDigest, action:.retire)) == nil)
+        let unusual = source.replacingOccurrences(of: "--stdio", with: "a b\u{202e}c")
+        let display = try renderHarnessReview(unusual, planID: prior, digest: hash(unusual), action: .install)
+        precondition(display.contains(#"argv[1] "a b\u202ec""#) && !display.contains("\u{202e}"))
         // A valid digest over the transferred retirement cannot substitute
         // for the original installation's digest over this very same mapping.
         for changed in [

@@ -112,3 +112,37 @@ func checkHarnessPlan(_ text: String, planID: String, digest: String, action: Ha
         guard originalDigest == g.installed_plan_digest else { throw invalid }
     }
 }
+
+// Keep argv boundaries, whitespace, combining characters and bidi controls
+// visible on the native review surface. The full canonical plan is included.
+func renderHarnessReview(_ source: String, planID: String, digest: String, action: HarnessLaunchAction) throws -> String {
+    try checkHarnessPlan(source, planID: planID, digest: digest, action: action)
+    func visible(_ text: String) -> String {
+        text.utf16.map { unit in
+            if unit == 10 { return "\n" }
+            if (32...126).contains(unit) { return String(UnicodeScalar(unit)!) }
+            return String(format: "\\u%04x", unit)
+        }.joined()
+    }
+    let plan = try JSONDecoder().decode(HarnessPlan.self, from: Data(source.utf8))
+    let grant = try JSONDecoder().decode(Grant.self, from: Data(plan.steps[0].content.utf8))
+    var lines = ["Harness launch plan preview: " + action.rawValue, "Plan: " + planID, "Plan SHA-256: " + digest,
+        "Dedicated HQ UID: \(grant.hq_uid)",
+        "Launcher: \(grant.launcher.path)  SHA-256: \(grant.launcher.sha256)",
+        "Sandbox: \(grant.sandbox.path)  SHA-256: \(grant.sandbox.sha256)"]
+    if grant.action == "retire" {
+        lines += ["Installed plan: " + grant.installed_plan_id, "Installed plan SHA-256: " + grant.installed_plan_digest]
+    }
+    for adapter in grant.adapters {
+        lines += ["Adapter: \(adapter.adapter_id)  Account: \(adapter.account)  UID: \(adapter.uid)",
+            "Executable SHA-256: " + adapter.sha256]
+        for (i, arg) in ([adapter.executable] + adapter.args).enumerated() {
+            lines.append("argv[\(i)] " + visible(try quote(arg)))
+        }
+    }
+    for step in plan.steps {
+        lines.append("\(step.action) \(step.target)  \(step.owner):\(step.group) \(step.mode)")
+    }
+    lines += ["Sudoers rule", plan.steps[1].content, "Full canonical plan (non-ASCII shown as Unicode escapes)", visible(source)]
+    return lines.joined(separator: "\n")
+}
