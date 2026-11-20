@@ -1,0 +1,1 @@
+- The native macOS reviewer validates the exact harness account, adapter arguments and sandbox policy in a Machine launch rule, including the original installation digest when retiring the rule (#1470).
