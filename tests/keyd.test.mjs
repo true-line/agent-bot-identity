@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -183,7 +183,7 @@ test('install writes a launchd unit for keyd serve and a record; uninstall remov
   const bin = path.join(home, 'agent-bot-keyd');
   writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
   const loads = [];
-  const exec = (args) => loads.push(args);
+  const exec = (args) => args[0] === 'print' ? absentKeydJob() : loads.push(args);
   assert.throws(() => installKeyd({ bin, env, home, platform: 'linux', exec }), /only on macOS/);
   assert.throws(() => installKeyd({ bin: 'agent-bot-keyd', env, home, platform: 'darwin', exec }), /absolute path/);
   const first = installKeyd({ bin, env: { ...env, AGENT_BOT_KEYD_SERVICE_LABEL: 'app.geniusbar.keyd' }, home, platform: 'darwin', exec });
@@ -192,7 +192,7 @@ test('install writes a launchd unit for keyd serve and a record; uninstall remov
   const unit = readFileSync(first.unitPath, 'utf8');
   assert.match(unit, /<string>app\.geniusbar\.keyd<\/string>/);
   assert.match(unit, new RegExp(`<string>${bin.replaceAll('.', '\\.')}</string>\\s*<string>serve</string>\\s*<string>--state-dir</string>`));
-  assert.deepEqual(loads, [], 'AGENT_BOT_SUPERVISOR_SKIP_LOAD keeps launchctl out of tests');
+  assert.deepEqual(loads, [], 'skip-load never calls bootout or bootstrap');
   assert.deepEqual(readKeydRecord({ env, home }), { bin, label: 'app.geniusbar.keyd' });
   assert.equal(statSync(keydPaths({ env, home }).record).mode & 0o777, 0o600);
   assert.equal(statSync(keydPaths({ env, home }).dir).mode & 0o777, 0o700);
@@ -209,7 +209,7 @@ test('a unit that fails to load leaves no install record behind', (t) => {
   const bin = path.join(home, 'agent-bot-keyd');
   writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
   const loading = { ...env, AGENT_BOT_SUPERVISOR_SKIP_LOAD: '' };
-  const exec = (args) => { if (args[0] === 'bootstrap') throw new Error('Bootstrap failed: 5: Input/output error'); };
+  const exec = (args) => { if (args[0] === 'print') throw Object.assign(new Error('absent'), { status: 113 }); throw new Error('Bootstrap failed: 5: Input/output error'); };
   assert.throws(() => installKeyd({ bin, env: loading, home, platform: 'darwin', exec }), /Bootstrap failed/);
   assert.equal(readKeydRecord({ env, home }), null, 'no record, so the daemon injects no relay');
 });
@@ -218,12 +218,150 @@ test('uninstall removes the unit under the label install saved', (t) => {
   const { env, home } = fixture(t);
   const bin = path.join(home, 'agent-bot-keyd');
   writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
-  const custom = installKeyd({ bin, env: { ...env, AGENT_BOT_KEYD_SERVICE_LABEL: 'app.geniusbar.keyd' }, home, platform: 'darwin', exec: () => {} });
-  const removed = uninstallKeyd({ env, home, platform: 'darwin', exec: () => {} });
+  const custom = installKeyd({ bin, env: { ...env, AGENT_BOT_KEYD_SERVICE_LABEL: 'app.geniusbar.keyd' }, home, platform: 'darwin', exec: absentKeydJob });
+  const removed = uninstallKeyd({ env, home, platform: 'darwin', exec: absentKeydJob });
   assert.equal(removed.label, 'app.geniusbar.keyd');
   assert.equal(removed.unloaded, true);
   assert.equal(existsSync(custom.unitPath), false);
   assert.equal(readKeydRecord({ env, home }), null);
+});
+
+function absentKeydJob() {
+  throw Object.assign(new Error('service absent'), {status:113});
+}
+
+function keydJobInfo(unit, bin, state) {
+  return ['job = {', '\tpath = '+unit, '\tprogram = '+bin, '\targuments = {',
+    ...[bin, 'serve', '--state-dir', state].map(arg => '\t\t'+arg), '\t}', '}'].join('\n');
+}
+
+test('Identity preserves the Machine plist, an unowned matching plist, and an unknown registered keyd', t => {
+  const { env: fixtureEnv, home } = fixture(t);
+  const env = { ...fixtureEnv, AGENT_BOT_SUPERVISOR_SKIP_LOAD:'' };
+  const bin = path.join(home, 'agent-bot-keyd');
+  writeFileSync(bin, 'inert');
+  const opts = { env, home, bin, platform:'darwin' };
+  const { unitPath:unit, label } = installKeyd({ ...opts, env:fixtureEnv, exec:absentKeydJob });
+  const owned = readFileSync(unit, 'utf8');
+  const state = vouchStateDir({env, home});
+  const paths = keydPaths({env, home});
+  const machineBin = '/opt/homebrew/opt/managed-machine/bin/agent-bot-keyd';
+  const machine = ['<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">', '<dict>', '\t<key>Label</key>', '\t<string>'+label+'</string>',
+    '\t<key>ProgramArguments</key>', '\t<array>', ...[machineBin,'serve','--state-dir',state].map(a=>'\t\t<string>'+a+'</string>'),
+    '\t</array>', '\t<key>RunAtLoad</key>', '\t<true/>', '\t<key>KeepAlive</key>', '\t<true/>', '</dict>', '</plist>', ''].join('\n');
+  const shape = keydJobInfo(unit,bin,state);
+  for (const [body, hasRecord, info] of [
+    [machine,false,null], [machine,true,keydJobInfo(unit,machineBin,state)], [owned,false,shape],
+    [null,false,shape], [null,true,shape], [owned,true,keydJobInfo(unit,machineBin,state)],
+    [owned,true,shape.replace('\t\tserve','\t\tforeign')], [owned,true,shape.replace(unit,'/other/service.plist')],
+    [owned,true,'unexpected launchctl reply'],
+  ]) {
+    if (body === null) rmSync(unit,{force:true}); else writeFileSync(unit,body);
+    if (hasRecord) writeFileSync(paths.record,JSON.stringify({bin,label}),{mode:0o600}); else rmSync(paths.record,{force:true});
+    const mutations=[];
+    const exec = ([verb]) => {
+      if (verb === 'print') {
+        if (info === null) throw Object.assign(new Error('absent'),{status:113});
+        return info;
+      }
+      mutations.push(verb);
+    };
+    for (const action of [installKeyd,uninstallKeyd]) {
+      assert.throws(()=>action({...opts,exec}), /preserving the keyd LaunchAgent/);
+      assert.throws(()=>action({...opts,env:fixtureEnv,exec}), /preserving the keyd LaunchAgent/);
+      assert.deepEqual(mutations,[]);
+      assert.equal(existsSync(unit) ? readFileSync(unit,'utf8') : null,body);
+      assert.equal(existsSync(paths.record),hasRecord);
+      assert.equal(existsSync(paths.record+'.pending'),false);
+    }
+  }
+});
+
+test('Identity retries failed bootstrap, restores an unloaded owned job, updates and removes its recorded service', t => {
+  const {env:fixtureEnv,home} = fixture(t);
+  const env={...fixtureEnv,AGENT_BOT_SUPERVISOR_SKIP_LOAD:''};
+  const state=vouchStateDir({env,home});
+  const first=path.join(home,'first keyd'), second=path.join(home,'second keyd');
+  for (const file of [first,second]) writeFileSync(file,'inert');
+  let loaded=null, refuse=true, refuseStop=false;
+  const changes=[];
+  const exec=([op,domain,unit])=>{
+    if (op==='print') {
+      if (domain.startsWith('gui/') && loaded) return loaded;
+      throw Object.assign(new Error('absent'),{status:113});
+    }
+    changes.push(op);
+    if (op==='bootstrap') {
+      if (refuse) throw new Error('bootstrap unavailable');
+      const program=readFileSync(unit,'utf8').includes(first)?first:second;
+      loaded=keydJobInfo(unit,program,state);
+    } else if (op==='bootout') {
+      if (refuseStop) throw new Error('stop refused');
+      loaded=null;
+    } else assert.fail(op);
+  };
+  const opts={env,home,platform:'darwin',exec};
+  assert.throws(()=>installKeyd({...opts,bin:first}),/bootstrap unavailable/);
+  assert.equal(readKeydRecord({env,home}),null);
+  assert.throws(()=>installKeyd({...opts,bin:second}),/preserving/);
+  refuse=false;
+  const installed=installKeyd({...opts,bin:first});
+  assert.equal(readKeydRecord({env,home}).bin,first);
+  installKeyd({...opts,bin:first});
+  assert.deepEqual(changes,['bootstrap','bootstrap']);
+  loaded=null;
+  installKeyd({...opts,bin:first});
+  assert.equal(changes.at(-1),'bootstrap');
+  refuseStop=true;
+  assert.throws(()=>uninstallKeyd(opts),/stop refused/);
+  assert.ok(existsSync(installed.unitPath));
+  assert.equal(readKeydRecord({env,home}).bin,first);
+  refuseStop=false;
+  installKeyd({...opts,bin:second});
+  assert.equal(readKeydRecord({env,home}).bin,second);
+  assert.ok(loaded.includes(second));
+  uninstallKeyd(opts);
+  assert.equal(loaded,null);
+  assert.equal(existsSync(installed.unitPath),false);
+  assert.equal(readKeydRecord({env,home}),null);
+  assert.equal(uninstallKeyd(opts).unloaded,false);
+});
+
+test('Identity preserves the unit on ambiguous job lookup or replacement during bootout', t => {
+  const { env: fixtureEnv, home } = fixture(t);
+  const env = { ...fixtureEnv, AGENT_BOT_SUPERVISOR_SKIP_LOAD: '' };
+  const bin = path.join(home, 'keyd');
+  writeFileSync(bin, 'inert');
+  const installed = installKeyd({ bin, env: fixtureEnv, home, platform: 'darwin', exec: absentKeydJob });
+  const unit = installed.unitPath;
+  const original = readFileSync(unit, 'utf8');
+  const info = keydJobInfo(unit, bin, vouchStateDir({ env, home }));
+  for (const op of [installKeyd, uninstallKeyd]) {
+    const exec = ([verb, target]) => {
+      assert.equal(verb, 'print');
+      if (target.startsWith('gui/')) return absentKeydJob();
+      return info;
+    };
+    assert.throws(() => op({ env, home, bin, platform: 'darwin', exec }), /preserving/);
+    assert.throws(() => op({ env, home, bin, platform: 'darwin', exec: () => { throw new Error('unavailable'); } }), /preserving/);
+    assert.equal(readFileSync(unit, 'utf8'), original);
+  }
+  let running = true;
+  const exec = ([verb, target]) => {
+    if (verb === 'print') {
+      if (running && target.startsWith('gui/')) return info;
+      return absentKeydJob();
+    }
+    assert.equal(verb, 'bootout');
+    renameSync(unit, unit + '.original');
+    writeFileSync(unit, original);
+    running = false;
+  };
+  assert.throws(() => uninstallKeyd({ env, home, platform: 'darwin', exec }), /preserving/);
+  assert.equal(readFileSync(unit, 'utf8'), original);
+  assert.equal(readKeydRecord({ env, home }).bin, bin);
 });
 
 test('a bound keyd soul\'s mint through the daemon keeps the installation id', async (t) => {

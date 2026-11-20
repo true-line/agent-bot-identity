@@ -236,6 +236,14 @@ agent-bot keyd status [--json]              # and whether keyd is the pinned ver
 agent-bot keyd uninstall [--json]            # the Keychain items stay
 ```
 
+On macOS, Identity updates or removes a LaunchAgent only when its installation
+record, generated plist and registered job agree. Retry a failed install with
+the same binary to complete registration. If Machine supplies keyd, update its
+Homebrew package as the prefix owner when the new package includes the version
+shown by `agent-bot keyd status`. Identity preserves unrecognized units for
+their owning installer.
+
+
 `install` writes a launchd agent (`AGENT_BOT_KEYD_SERVICE_LABEL`, default
 `dev.qwts.agent-bot.keyd`; GeniusBar uses `app.geniusbar.keyd`) that runs
 `agent-bot-keyd serve`.

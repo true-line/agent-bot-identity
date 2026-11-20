@@ -7,14 +7,15 @@
 //   agent-bot keyd uninstall [--json]            unload it (its keys stay)
 //   agent-bot keyd status [--json]               whether it answers, and the pin
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { withLock } from './file-lock.mjs';
 import { renderLaunchdPlist, supervisorSkipLoad } from './daemon-supervisor.mjs';
 import {
-  KEYD_LABEL, KEYD_LABEL_VARIABLE, keydPaths, keydStatus, keydVersionAction, readKeydRecord,
+  KEYD_LABEL, KEYD_LABEL_VARIABLE, keydPaths, keydStatus, keydVersionAction,
   vouchStateDir
 } from './identity-host.mjs';
 
@@ -30,52 +31,137 @@ function unitPath(label, home) {
 }
 
 function launchctl(args, env) {
-  return execFileSync('launchctl', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env });
+  return execFileSync('/bin/launchctl', args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'], env });
 }
 
-// Supervise keyd under launchd from `bin`, the copy a host ships. Rewritten
-// and reloaded only when the unit changes, like `daemon install`.
+const ownershipError = () => new Error('preserving the keyd LaunchAgent: its Identity installation record, plist and loaded job must agree. Manage a Machine-owned helper through its Machine installation');
+
+function optionalFile(file) {
+  let fd;
+  try { fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw ownershipError();
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.uid !== process.getuid() || stat.nlink !== 1 || (stat.mode & 0o022) || stat.size > 64 * 1024) throw ownershipError();
+    return { dev: stat.dev, ino: stat.ino, text: readFileSync(fd, 'utf8') };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function checkFile(file, expected) {
+  const actual = optionalFile(file);
+  if (actual?.dev !== expected?.dev || actual?.ino !== expected?.ino || actual?.text !== expected?.text) throw ownershipError();
+}
+
+function registration(file) {
+  const record = optionalFile(file);
+  if (record === null) return null;
+  let value;
+  try { value = JSON.parse(record.text); } catch { throw ownershipError(); }
+  const label = value?.label ?? KEYD_LABEL;
+  if (typeof value?.bin !== 'string' || !path.isAbsolute(value.bin) ||
+      typeof label !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(label)) throw ownershipError();
+  return { bin: value.bin, label };
+}
+
+function plistFor(label, bin, state) {
+  return renderLaunchdPlist({ programArguments: [bin, 'serve', '--state-dir', state], label });
+}
+
+// Inspect the top-level launchd fields. Nested service metadata and
+// environment values are never a source of program or ownership evidence.
+function loadedKeyd(exec, env, domain, label, unit, bin, state) {
+  let info;
+  try { info = exec(['print', `${domain}/${label}`], env); } catch (error) {
+    if (error.status === 113 || error.status === 112) return false;
+    throw ownershipError();
+  }
+  if (!bin || typeof info !== 'string') throw ownershipError();
+  const lines = info.split('\n');
+  const field = name => lines.filter(line => line.startsWith(`\t${name} = `));
+  const args = field('arguments');
+  const at = lines.indexOf('\targuments = {');
+  const expectedArgs = [bin, 'serve', '--state-dir', state].map(arg => '\t\t'+arg);
+  if (field('path').length !== 1 || field('path')[0] !== '\tpath = '+unit ||
+      field('program').length !== 1 || field('program')[0] !== '\tprogram = '+bin ||
+      args.length !== 1 || at < 0 || !expectedArgs.every((arg, i) => lines[at + i + 1] === arg) ||
+      lines[at + expectedArgs.length + 1] !== '\t}') throw ownershipError();
+  return true;
+}
+
+function changeKeyd({ bin, env, home, exec }) {
+  const install = bin !== undefined;
+  const paths = keydPaths({ env, home });
+  const state = vouchStateDir({ env, home });
+  const pendingPath = paths.record + '.pending';
+  return withLock(path.join(home, '.agent-bot-keyd-lifecycle.lock'), 'keyd lifecycle', () => {
+    const saved = registration(paths.record);
+    const pending = registration(pendingPath);
+    const label = install ? keydLabel(env) : saved?.label ?? pending?.label ?? keydLabel(env);
+    if ((saved && saved.label !== label) || (pending && (pending.label !== label || install && pending.bin !== bin))) throw ownershipError();
+    const unit = unitPath(label, home);
+    const previous = optionalFile(unit);
+    const owner = [saved, pending].find(record => record && previous?.text === plistFor(label, record.bin, state));
+    if (previous !== null && !owner) throw ownershipError();
+    const domain = `gui/${process.getuid()}`;
+    const skipLoad = supervisorSkipLoad(env);
+    const registered = () => {
+      const gui = loadedKeyd(exec, env, domain, label, unit, owner?.bin, state);
+      const user = loadedKeyd(exec, env, 'user/'+process.getuid(), label, unit, owner?.bin, state);
+      if (user && !gui) throw ownershipError();
+      return gui;
+    };
+    const loaded = registered();
+    const desired = install ? plistFor(label, bin, state) : null;
+    const changed = (previous?.text ?? null) !== desired;
+    if (loaded && changed) {
+      if (skipLoad) throw new Error('the verified keyd job is running; resume without skip-load to change it');
+      checkFile(unit, previous);
+      exec(['bootout', `${domain}/${label}`], env);
+      if (registered()) throw new Error('keyd is still registered; retry after the verified job stops');
+    }
+    checkFile(unit, previous);
+    if (!install) {
+      if (previous !== null) rmSync(unit);
+      if (pending) rmSync(pendingPath);
+      if (saved) rmSync(paths.record);
+      return { unloaded: previous !== null, label, unitPath: unit };
+    }
+    if (!changed && saved?.bin === bin && !pending) {
+      if (!skipLoad && !loaded) exec(['bootstrap', domain, unit], env);
+      checkFile(unit, previous);
+      return { label, unitPath: unit, bin, changed, loaded: true };
+    }
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    mkdirSync(path.dirname(unit), { recursive: true });
+    // Only the committed record enables keyd's relay. Keep a separate intent
+    // so a failed or interrupted bootstrap can retry the exact owned unit.
+    if (!pending) writeFileSync(pendingPath, JSON.stringify({ bin, label })+'\n', { flag: 'wx', mode: 0o600 });
+    if (changed) {
+      if (previous !== null) rmSync(unit);
+      writeFileSync(unit, desired, { mode: 0o644, flag: 'wx' });
+    }
+    const installed = changed ? optionalFile(unit) : previous;
+    if (installed?.text !== desired) throw ownershipError();
+    if (!skipLoad && (!loaded || changed)) exec(['bootstrap', domain, unit], env);
+    checkFile(unit, installed);
+    renameSync(pendingPath, paths.record);
+    return { label, unitPath: unit, bin, changed, loaded: true };
+  }, { keepLiveOwners: true });
+}
+
 export function installKeyd({ bin, env = process.env, home = homedir(), platform = process.platform, exec = launchctl } = {}) {
   if (platform !== 'darwin') throw new Error('agent-bot-keyd runs only on macOS');
   if (typeof bin !== 'string' || !path.isAbsolute(bin) || !existsSync(bin)) throw new Error('--bin must be the absolute path of an agent-bot-keyd binary');
-  const label = keydLabel(env);
-  const unit = unitPath(label, home);
-  const state = vouchStateDir({ env, home });
-  const body = renderLaunchdPlist({ programArguments: [bin, 'serve', '--state-dir', state], label });
-  let previous = null;
-  try { previous = readFileSync(unit, 'utf8'); } catch { /* first install */ }
-  const paths = keydPaths({ env, home });
-  mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
-  const changed = previous !== body;
-  if (changed) {
-    mkdirSync(path.dirname(unit), { recursive: true });
-    writeFileSync(unit, body, { mode: 0o644 });
-    if (!supervisorSkipLoad(env)) {
-      const domain = `gui/${process.getuid()}`;
-      try { exec(['bootout', `${domain}/${label}`], env); } catch { /* not loaded yet */ }
-      exec(['bootstrap', domain, unit], env);
-    }
-  }
-  // Published last: the daemon injects keyd's relay only for a record, so
-  // a unit that failed to write or load must not leave one behind.
-  writeFileSync(paths.record, `${JSON.stringify({ bin, label })}\n`, { mode: 0o600 });
-  return { label, unitPath: unit, bin, changed, loaded: true };
+  return changeKeyd({ bin, env, home, exec });
 }
 
 export function uninstallKeyd({ env = process.env, home = homedir(), platform = process.platform, exec = launchctl } = {}) {
   if (platform !== 'darwin') return { unloaded: false, reason: 'unsupported-platform' };
-  // The label install saved wins over today's environment, so an install
-  // under a custom label is removed without repeating that variable.
-  const saved = readKeydRecord({ env, home })?.label;
-  const label = typeof saved === 'string' && /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(saved) ? saved : keydLabel(env);
-  const unit = unitPath(label, home);
-  const present = existsSync(unit);
-  if (present && !supervisorSkipLoad(env)) {
-    try { exec(['bootout', `gui/${process.getuid()}/${label}`], env); } catch { /* already stopped */ }
-  }
-  rmSync(unit, { force: true });
-  rmSync(keydPaths({ env, home }).record, { force: true });
-  return { unloaded: present, label, unitPath: unit };
+  return changeKeyd({ env, home, exec });
 }
 
 
