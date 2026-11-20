@@ -14,7 +14,7 @@ target=$(/usr/bin/uname -m)-apple-macosx15.0
     "$src/TrustedApplication.c" -o "$build/trusted.o"
 /usr/bin/xcrun --sdk macosx swiftc -O -target "$target" -swift-version 5 -parse-as-library \
     -module-name AgentBotOwnerPresence \
-    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" \
+    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" \
     "$src/FreshOwnerStore.swift" "$src/OwnerFirstEnrollment.swift" "$src/OwnerExecutable.swift" "$src/Main.swift" "$build/trusted.o" \
     -o "$build/ai.true-line.agent-bot-owner-presence"
 ln "$build/ai.true-line.agent-bot-owner-presence" "$out"

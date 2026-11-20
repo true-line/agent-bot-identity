@@ -6,13 +6,13 @@ import SystemConfiguration
 // exported challenge arrives on stdin; the deliberate confirmation is local.
 enum HarnessNativeReview {
     static func text(_ challenge: HarnessLaunchChallenge) throws -> String {
-        let action: HarnessLaunchAction
-        switch challenge.action {
-        case "harness-launch-install": action = .install
-        case "harness-launch-retire": action = .retire
-        default: throw PresenceFailure.invalidChallenge
+        guard let purpose = PairedHarnessPurpose(rawValue: challenge.action) else { throw PresenceFailure.invalidChallenge }
+        let details: String
+        if let launch = purpose.launchAction {
+            details = try renderHarnessReview(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest, action: launch)
+        } else {
+            details = try reviewHarnessAccounts(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest)
         }
-        let details = try renderHarnessReview(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest, action: action)
         return ["Machine SHA-256: " + machineFingerprint(challenge.machine_key),
                 "HQ SHA-256: " + machineFingerprint(challenge.hq_key),
                 "Expires (Unix seconds): " + String(challenge.expires_at), details].joined(separator: "\n")
@@ -26,8 +26,9 @@ enum HarnessNativeReview {
         let app = NSApplication.shared
         guard app.setActivationPolicy(.accessory) else { throw PresenceFailure.incomplete }
         let alert = NSAlert()
-        alert.messageText = challenge.action == "harness-launch-install" ? "Install harness launch permission?" : "Retire harness launch permission?"
-        alert.informativeText = "Review the account, command arguments and file changes below before continuing to owner authentication."
+        guard let purpose = PairedHarnessPurpose(rawValue: challenge.action) else { throw PresenceFailure.invalidChallenge }
+        alert.messageText = purpose.confirmationPrompt
+        alert.informativeText = "Review the exact plan below before continuing to owner authentication."
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 330))
         scroll.hasVerticalScroller = true
         let view = NSTextView(frame: scroll.contentView.bounds)

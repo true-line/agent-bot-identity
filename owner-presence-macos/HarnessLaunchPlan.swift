@@ -23,13 +23,13 @@ private struct Grant: Decodable {
 // Go writes fields in declaration order and one final LF. Rebuild using that
 // schema, so duplicate/extra fields or alternate numeric encodings cannot
 // disappear inside Foundation's decoder and still produce an approval.
-private func quote(_ value: String) throws -> String {
+func quote(_ value: String) throws -> String {
     let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes])
     return String(decoding: data, as: UTF8.self)
         .replacingOccurrences(of: "\u{2028}", with: "\\u2028").replacingOccurrences(of: "\u{2029}", with: "\\u2029")
 }
-private func array(_ elements: [String]) -> String { "[" + elements.joined(separator: ",") + "]" }
-private func object(_ fields: [(String,String)]) -> String {
+func array(_ elements: [String]) -> String { "[" + elements.joined(separator: ",") + "]" }
+func object(_ fields: [(String,String)]) -> String {
     "{" + fields.map { "\"" + $0.0 + "\":" + $0.1 }.joined(separator: ",") + "}"
 }
 func matchesHarnessField(_ text: String, _ pattern: String) -> Bool {

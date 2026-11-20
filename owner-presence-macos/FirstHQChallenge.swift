@@ -20,8 +20,8 @@ enum OwnerRequest {
         case .pairing(let challenge): return challenge.approvalReason
         case .firstHQ(let challenge): return challenge.approvalReason
         case .harnessLaunch(let c):
-            let verb = c.action == "harness-launch-install" ? "Install" : "Retire"
-            return "\(verb) the reviewed harness launch rule?\nMachine SHA-256: \(machineFingerprint(c.machine_key))\nPlan: \(c.plan_id)\nPlan SHA-256: \(c.plan_digest)"
+            let operation = PairedHarnessPurpose(rawValue: c.action)?.confirmationPrompt ?? "Review the signed harness plan?"
+            return "\(operation)\nMachine SHA-256: \(machineFingerprint(c.machine_key))\nPlan: \(c.plan_id)\nPlan SHA-256: \(c.plan_digest)"
         }
     }
 

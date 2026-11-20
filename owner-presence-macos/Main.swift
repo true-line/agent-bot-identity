@@ -17,7 +17,7 @@ enum OwnerPresenceMain {
         switch command {
         case "approve-pairing": limit = PairingChallenge.maximumBytes
         case "approve-first-hq": limit = FirstHQChallenge.maximumBytes
-        case "approve-harness-launch-install", "approve-harness-launch-retire": limit = HarnessLaunchChallenge.maximumBytes
+        case "approve-harness-launch-install", "approve-harness-launch-retire", "approve-harness-account-provision": limit = HarnessLaunchChallenge.maximumBytes
         default: throw PresenceFailure.invalidChallenge
         }
         let bytes = try readInput(limit: limit)
@@ -28,6 +28,7 @@ enum OwnerPresenceMain {
             case "approve-first-hq": return .firstHQ(try FirstHQChallenge.parse(bytes, now: now))
             case "approve-harness-launch-install": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .install, now: now))
             case "approve-harness-launch-retire": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .retire, now: now))
+            case "approve-harness-account-provision": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .provision, now: now))
             default: throw PresenceFailure.invalidChallenge
             }
         } catch let refusal as PresenceFailure {
