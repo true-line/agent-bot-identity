@@ -40,7 +40,7 @@ func checkHarnessPlan(_ text: String, planID: String, digest: String, action: Ha
     let invalid = PresenceFailure.invalidChallenge
     let base = "/Library/Application Support/ai.true-line.agent-bot-hq"
     let data = Data(text.utf8)
-    guard data.count <= 64 * 1024, matchesHarnessField(planID, "plan-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}"),
+    guard data.count <= 32 * 1024, matchesHarnessField(planID, "plan-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}"),
           SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == digest else { throw invalid }
     let p = try JSONDecoder().decode(HarnessPlan.self, from: data)
     guard p.version == 3, p.hq_account == "_agent-bot-hq", p.dir == base + "/ipc", p.steps.count == 2 else { throw invalid }
@@ -48,13 +48,20 @@ func checkHarnessPlan(_ text: String, planID: String, digest: String, action: Ha
     let policy = p.steps[0], rule = p.steps[1]
     guard policy.target == base + "/harness-launch-policy.json", policy.mode == "0644",
           rule.target == "/private/etc/sudoers.d/agent-bot-hq-harness-launch", rule.mode == "0440" else { throw invalid }
-    let steps = try p.steps.map { s -> String in
-        guard s.kind == "file", s.action == (install ? "create" : "remove"), s.owner == "root", s.group == "wheel" else { throw invalid }
-        return try object([("kind",quote(s.kind)), ("target",quote(s.target)), ("action",quote(s.action)),
-                           ("owner",quote(s.owner)), ("group",quote(s.group)), ("mode",quote(s.mode)), ("content",quote(s.content))])
+    for s in p.steps {
+        guard s.kind == "file", s.action == (install ? "create" : "remove"),
+              s.owner == "root", s.group == "wheel" else { throw invalid }
     }
-    let rebuilt = try object([("version","3"), ("hq_account",quote(p.hq_account)), ("dir",quote(p.dir)),
-                              ("members",array(p.members.map(quote))), ("steps",array(steps))]) + "\n"
+    func renderPlan(fileAction: String, policyContent: String) throws -> String {
+        let steps = try p.steps.enumerated().map { (index, s) -> String in
+            try object([("kind",quote(s.kind)), ("target",quote(s.target)), ("action",quote(fileAction)),
+                        ("owner",quote(s.owner)), ("group",quote(s.group)), ("mode",quote(s.mode)),
+                        ("content",quote(index == 0 ? policyContent : s.content))])
+        }
+        return try object([("version","3"), ("hq_account",quote(p.hq_account)), ("dir",quote(p.dir)),
+                           ("members",array(p.members.map(quote))), ("steps",array(steps))]) + "\n"
+    }
+    let rebuilt = try renderPlan(fileAction: policy.action, policyContent: policy.content)
     guard Data(rebuilt.utf8) == data else { throw invalid }
     let bytes = Data(policy.content.utf8)
     let g = try JSONDecoder().decode(Grant.self, from: bytes)
@@ -87,12 +94,21 @@ func checkHarnessPlan(_ text: String, planID: String, digest: String, action: Ha
     }
     let names = accounts.keys.sorted()
     guard names == p.members, Set(accounts.values).count == accounts.count else { throw invalid }
-    let grant = try object([("schema",quote(g.schema)), ("action",quote(g.action)), ("hq_uid",String(g.hq_uid)),
-                            ("launcher",file(g.launcher,"harness-launch")), ("sandbox",file(g.sandbox,"harness-egress.sb")),
-                            ("adapters",array(adapters)), ("installed_plan_id",quote(g.installed_plan_id)),
-                            ("installed_plan_digest",quote(g.installed_plan_digest))]) + "\n"
+    func renderGrant(action: HarnessLaunchAction, previousID: String, previousDigest: String) throws -> String {
+        try object([("schema",quote(g.schema)), ("action",quote(action.rawValue)), ("hq_uid",String(g.hq_uid)),
+                    ("launcher",file(g.launcher,"harness-launch")), ("sandbox",file(g.sandbox,"harness-egress.sb")),
+                    ("adapters",array(adapters)), ("installed_plan_id",quote(previousID)),
+                    ("installed_plan_digest",quote(previousDigest))]) + "\n"
+    }
+    let grant = try renderGrant(action: action, previousID: g.installed_plan_id, previousDigest: g.installed_plan_digest)
     let launcher = g.launcher.path.replacingOccurrences(of:" ",with:"\\ ")
     let lines = names.map { "_agent-bot-hq ALL = (\($0)) NOPASSWD: NOSETENV: sha256:\(g.launcher.sha256) \(launcher) harness-run" }
     let sudoers = (["# Managed by managed-machine harness launch v1."] + lines + [""]).joined(separator:"\n")
     guard Data(grant.utf8) == bytes, Data(rule.content.utf8) == Data(sudoers.utf8) else { throw invalid }
+    if !install {
+        let originalGrant = try renderGrant(action: .install, previousID: "", previousDigest: "")
+        let originalPlan = try renderPlan(fileAction: "create", policyContent: originalGrant)
+        let originalDigest = SHA256.hash(data: Data(originalPlan.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard originalDigest == g.installed_plan_digest else { throw invalid }
+    }
 }
