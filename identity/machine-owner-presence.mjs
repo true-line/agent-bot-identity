@@ -1,87 +1,75 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { accessSync, constants, lstatSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { promisify } from 'node:util';
-import path from 'node:path';
-import process from 'node:process';
 import { ANY_DEVELOPER_ID, keydSignerSetting, loadConfig } from '../config.mjs';
 import { developerIdRequirement } from './owner-presence.mjs';
 
-const APP = '/Applications/AgentBotOwnerPresence.app';
-const PROGRAM = APP + '/Contents/MacOS/agent-bot-owner-presence';
-const IDENTIFIER = 'ai.true-line.agent-bot-owner-presence';
+const identifier = 'ai.true-line.agent-bot-owner-presence';
+const executable = '/Library/PrivilegedHelperTools/' + identifier;
+const execAsync = promisify(execFile);
 
-// Verification and execution are separate OS operations. The approver's
-// account must not be able to replace a checked executable or its ancestors.
-function checkInstallPath() {
-  for (let location = PROGRAM; location !== '/'; location = path.dirname(location)) {
-    const info = lstatSync(location);
-    if (info.uid === process.getuid()) throw new Error(`owner approval requires an independently installed app (${location})`);
-    if (location === PROGRAM ? !info.isFile() : !info.isDirectory()) {
-      throw new Error(`unexpected owner approval installation at ${location}`);
-    }
-    try {
-      accessSync(location, constants.W_OK);
-    } catch (error) {
-      if (error.code === 'EACCES' || error.code === 'EPERM' || error.code === 'EROFS') continue;
-      throw error;
-    }
-    throw new Error(`owner approval needs an installation this account cannot modify (${location})`);
-  }
-}
-
-// The native helper owns input validation, the platform prompt and signing.
-// Its success output is public JSON. Machine makes the enrollment decision.
-export function machineOwnerPresence(command, {
-  env, home, platform = process.platform, exec = execFileSync, checkPath = checkInstallPath,
-  terminalInput = process.stdin.isTTY,
-} = {}) {
-  if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
-  if (command !== 'owner-public-key' && command !== 'approve-pairing') throw new Error('unknown Machine owner operation');
-  if (command === 'approve-pairing' && terminalInput) throw new Error('provide the Machine pairing challenge JSON on standard input');
-  const options = verifiedInstallation({ env, home, exec, checkPath });
-  return exec(PROGRAM, [command === 'owner-public-key' ? 'public-key' : command], {
-    ...options, stdio: [command === 'approve-pairing' ? 'inherit' : 'ignore', 'pipe', 'inherit'],
-    encoding: 'utf8', timeout: 150000, maxBuffer: 8192,
+function unavailable(cause) {
+  return Object.assign(new Error('The signed Machine owner helper or its protected credential is unavailable. Keep the existing owner pin.', { cause }), {
+    code: 'machine-owner-provider-unavailable',
   });
 }
 
-function verifiedInstallation({ env, home, exec, checkPath }) {
-  const { teamId } = keydSignerSetting(loadConfig({ env, home }));
-  if (!teamId || teamId === ANY_DEVELOPER_ID) throw new Error('Machine owner approval requires an exact settings.keydTeamId in the organization configuration');
-  try {
-    checkPath();
-  } catch (error) {
-    if (error.code === 'ENOENT') throw new Error(`the separate Mac owner approval app is missing at ${APP}`);
-    throw error;
+function checkInstallation() {
+  for (let p = executable; ; p = dirname(p)) {
+    const stat = lstatSync(p);
+    if (stat.uid !== 0 || (p === executable ? !stat.isFile() : !stat.isDirectory())) throw unavailable();
+    try {
+      accessSync(p, constants.W_OK);
+    } catch (error) {
+      if (!['EACCES', 'EPERM', 'EROFS'].includes(error.code)) throw error;
+      if (p === '/') break;
+      continue;
+    }
+    throw unavailable();
   }
-  const requirement = developerIdRequirement({ teamId, identifier: IDENTIFIER });
-  const options = { env: { PATH: '/usr/bin:/bin', HOME: home }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 };
-  try {
-    exec('/usr/bin/codesign', ['--verify', '--strict', `-R=${requirement}`, APP], options);
-    exec('/usr/bin/codesign', ['--verify', '--strict', `-R=${requirement}`, PROGRAM], options);
-    exec('/usr/sbin/spctl', ['--assess', '--type', 'execute', APP], options);
-  } catch (cause) {
-    throw new Error('macOS could not verify the signed owner approval app', { cause });
-  }
-  return options;
 }
 
-// Web approval waits on an asynchronous child so the owner can log out and
-// other daemon requests continue while the macOS presence prompt is open.
-const execAsync = promisify(execFile);
+function verifiedOptions({ env, home, checkPath = checkInstallation, exec = execFileSync }) {
+  const options = { env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8', timeout: 15000, maxBuffer: 8192 };
+  try {
+    checkPath();
+    const { teamId } = keydSignerSetting(loadConfig({ env, home }));
+    if (!teamId || teamId === ANY_DEVELOPER_ID) throw unavailable();
+    const requirement = developerIdRequirement({ teamId, identifier });
+    exec('/usr/bin/codesign', ['--verify', '--strict', '--check-notarization', '-R=notarized and ' + requirement, executable],
+      { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (error) {
+    throw unavailable(error);
+  }
+  return { ...options, timeout: 150000 };
+}
+
+export function machineOwnerPresence(command, {
+  platform = process.platform, terminalInput = process.stdin.isTTY, exec = execFileSync, ...options
+} = {}) {
+  if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
+  if (!['init-owner-key', 'owner-public-key', 'approve-pairing'].includes(command)) throw new Error('unknown Machine owner operation');
+  if (command === 'approve-pairing' && terminalInput) throw new Error('provide the Machine pairing challenge JSON on standard input');
+  return exec(executable, [command], {
+    ...verifiedOptions({ ...options, exec }), stdio: [command === 'approve-pairing' ? 'inherit' : 'ignore', 'pipe', 'inherit'],
+  });
+}
+
 async function signFirstHQ(input, options) {
-  const child = execAsync(PROGRAM, ['approve-first-hq'], { ...options, encoding: 'utf8', timeout: 150000, maxBuffer: 8192 });
-  // A helper that refuses early may close stdin before the write finishes.
+  const child = execAsync(executable, ['approve-first-hq'], options);
   child.child.stdin.on('error', () => {});
   child.child.stdin.end(input);
   return (await child).stdout;
 }
 
-export async function approveFirstHQ(challenge, {
-  env, home, platform = process.platform, exec = execFileSync, checkPath = checkInstallPath,
-  sign = signFirstHQ, signal,
-} = {}) {
+export async function approveFirstHQ(challenge, { platform = process.platform, signal, sign = signFirstHQ, ...options } = {}) {
   if (platform !== 'darwin') throw new Error('Machine owner approval requires macOS');
-  const options = verifiedInstallation({ env, home, exec, checkPath });
-  return sign(JSON.stringify(challenge), { ...options, signal });
+  const childOptions = { ...verifiedOptions(options), signal };
+  try {
+    return await sign(JSON.stringify(challenge), childOptions);
+  } catch (error) {
+    if ([69, 'ENOENT', 'EACCES', 'ENOEXEC'].includes(error.code)) throw unavailable(error);
+    throw error;
+  }
 }

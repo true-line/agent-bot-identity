@@ -1,71 +1,90 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { runMachineCli } from '../cli/machine.mjs';
-import { machineOwnerPresence } from '../identity/machine-owner-presence.mjs';
+import { approveFirstHQ, machineOwnerPresence } from '../identity/machine-owner-presence.mjs';
 
 function fixture(t, settings = { keydTeamId: 'ABCDE12345' }) {
   const home = mkdtempSync(path.join(tmpdir(), 'machine-owner-'));
   t.after(() => rmSync(home, { force: true, recursive: true }));
   const config = path.join(home, 'config.json');
   writeFileSync(config, JSON.stringify({ settings }));
-  return { env: { HOME: home, AGENT_BOT_CONFIG: config }, home, platform: 'darwin', checkPath() {}, terminalInput: false };
+  return { env: { HOME: home, AGENT_BOT_CONFIG: config }, home, platform: 'darwin', terminalInput: false };
 }
 
-test('protected CLI requires the dedicated helper and the configured exact Developer ID', (t) => {
+test('Machine owner commands refuse without creating local state when the owner provider is unavailable', async (t) => {
   const options = fixture(t);
+  options.checkPath = () => { throw new Error('not installed'); };
+  const refusal = { code: 'machine-owner-provider-unavailable', message: /signed Machine owner helper or its protected credential is unavailable/ };
+  for (const command of ['init-owner-key', 'owner-public-key', 'approve-pairing']) {
+    assert.throws(() => machineOwnerPresence(command, options), refusal);
+  }
+  await assert.rejects(approveFirstHQ({}, options), refusal);
+  assert.deepEqual(readdirSync(options.home), ['config.json']);
+  assert.throws(() => machineOwnerPresence('owner-public-key', { ...options, platform: 'linux' }), /requires macOS/);
+  assert.throws(() => machineOwnerPresence('approve-pairing', { ...options, terminalInput: true }), /standard input/);
+  assert.throws(() => machineOwnerPresence('sign', options), /unknown Machine owner operation/);
+});
+
+test('daily operations use only the verified installed executable and the selected command', async (t) => {
+  const options = fixture(t);
+  const helper = '/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence';
   const calls = [];
-  const proof = '{"public_key":"fixture","signature":"fixture"}\n';
-  const exec = (bin, args, settings) => { calls.push({ bin, args, settings }); return proof; };
-  assert.equal(machineOwnerPresence('approve-pairing', { ...options, exec }), proof);
-  assert.deepEqual(calls.map(({ bin }) => bin), ['/usr/bin/codesign', '/usr/bin/codesign', '/usr/sbin/spctl',
-    '/Applications/AgentBotOwnerPresence.app/Contents/MacOS/agent-bot-owner-presence']);
-  for (const { args } of calls.slice(0, 2)) {
-    assert.ok(args.includes('--strict'));
-    const requirement = args.find((arg) => arg.startsWith('-R='));
-    assert.match(requirement, /identifier "ai\.true-line\.agent-bot-owner-presence"/);
-    assert.match(requirement, /subject\.OU\] = "ABCDE12345"/);
+  options.checkPath = () => calls.push('path');
+  options.exec = (file, args, child) => {
+    calls.push(file);
+    if (file === '/usr/bin/codesign') {
+      assert.ok(args.includes('--check-notarization'));
+      assert.match(args.at(-2), /ABCDE12345/);
+      assert.match(args.at(-2), /identifier "ai\.true-line\.agent-bot-owner-presence"/);
+      assert.equal(args.at(-1), helper);
+      return '';
+    }
+    assert.equal(file, helper);
+    assert.deepEqual(args, [command]);
+    assert.equal(child.stdio[0], command === 'approve-pairing' ? 'inherit' : 'ignore');
+    assert.deepEqual(child.env, { PATH: '/usr/bin:/bin' });
+    return 'public result';
+  };
+  let command;
+  for (command of ['owner-public-key', 'init-owner-key', 'approve-pairing']) {
+    calls.length = 0;
+    assert.equal(machineOwnerPresence(command, options), 'public result');
+    assert.deepEqual(calls, ['path', '/usr/bin/codesign', helper]);
   }
-  assert.deepEqual(calls.at(-1).args, ['approve-pairing']);
-  assert.equal(calls.at(-1).settings.stdio[0], 'inherit');
-  calls.length = 0;
-  machineOwnerPresence('owner-public-key', { ...options, exec });
-  assert.deepEqual(calls.at(-1).args, ['public-key']);
-  assert.equal(calls.at(-1).settings.stdio[0], 'ignore');
+  const controller = new AbortController();
+  const challenge = { nonce: 'example' };
+  const reply = await approveFirstHQ(challenge, {
+    ...options, signal: controller.signal, sign(input, child) {
+      assert.deepEqual(JSON.parse(input), challenge);
+      assert.equal(child.signal, controller.signal);
+      return 'public proof';
+    },
+  });
+  assert.equal(reply, 'public proof');
+  let invoked = false;
+  const bad = { ...options, exec() { throw new Error('untrusted signer'); }, sign() { invoked = true; } };
+  await assert.rejects(approveFirstHQ(challenge, bad), { code: 'machine-owner-provider-unavailable' });
+  assert.equal(invoked, false);
 });
 
-test('refuses an absent or wildcard team, a writable installation and a failed assessment before invoking the helper', (t) => {
-  const options = fixture(t);
-  for (const settings of [{}, { keydTeamId: 'any-developer-id' }]) {
-    assert.throws(() => machineOwnerPresence('owner-public-key', {
-      ...fixture(t, settings), exec: assert.fail,
-    }), /settings.keydTeamId/);
-  }
-  assert.throws(() => machineOwnerPresence('approve-pairing', {
-    ...options, checkPath() { throw new Error('writable installation'); }, exec: assert.fail,
-  }), /writable installation/);
-  for (const rejectedCall of [1, 2, 3]) {
-    let count = 0;
-    assert.throws(() => machineOwnerPresence('approve-pairing', {
-      ...options, exec() { if (++count === rejectedCall) throw new Error('refused'); },
-    }), /could not verify/);
-    assert.equal(count, rejectedCall);
+test('first HQ distinguishes a missing credential from a declined request', async (t) => {
+  const options = { ...fixture(t), checkPath() {}, exec() {} };
+  for (const code of [69, 'ENOENT', 1, 'ABORT_ERR']) {
+    const error = Object.assign(new Error('native refusal'), { code });
+    const request = approveFirstHQ({}, { ...options, sign: async () => { throw error; } });
+    if (code === 69 || code === 'ENOENT') {
+      await assert.rejects(request, { code: 'machine-owner-provider-unavailable' });
+    } else {
+      await assert.rejects(request, (reason) => reason === error);
+    }
   }
 });
 
-test('requires macOS and a piped challenge, and propagates a canceled owner prompt', (t) => {
-  const options = fixture(t);
-  assert.throws(() => machineOwnerPresence('owner-public-key', { ...options, platform: 'linux', exec: assert.fail }), /requires macOS/);
-  assert.throws(() => machineOwnerPresence('approve-pairing', { ...options, terminalInput: true, exec: assert.fail }), /standard input/);
-  assert.throws(() => machineOwnerPresence('approve-pairing', {
-    ...options, exec(bin) { if (bin.startsWith('/Applications')) throw new Error('canceled'); },
-  }), /canceled/);
-});
-
-test('normal machine route uses the signed helper once and writes only its stdout', async (t) => {
+test('normal machine route gates the typed owner operation and writes only its public response', async (t) => {
   const options = fixture(t);
   let output = '';
   const reply = '{"public_key":"fixture","signature":"fixture"}';

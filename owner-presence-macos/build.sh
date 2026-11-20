@@ -1,16 +1,20 @@
 #!/bin/sh
-# Compile an unsigned application into a new output directory for verification
-# or the separate, protected Developer ID signing and notarization process.
+# Produce one flat Mach-O. The protected release process signs the resulting bytes.
 set -eu
-if [ "$#" -ne 1 ]; then
-    echo "usage: build.sh NEW_OUTPUT_DIRECTORY" >&2
+if [ "$#" -ne 1 ] || [ "$(uname -s)" != Darwin ] || [ -e "$1" ] || [ -L "$1" ]; then
+    echo "usage: build.sh NEW_OUTPUT_FILE" >&2
     exit 2
 fi
 src=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-mkdir "$1"
-contents="$1/AgentBotOwnerPresence.app/Contents"
-mkdir -p "$contents/MacOS"
-cp "$src/Info.plist" "$contents/Info.plist"
-/usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library -O \
-    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/OwnerKey.swift" "$src/Main.swift" \
-    -o "$contents/MacOS/agent-bot-owner-presence"
+out=$(CDPATH='' cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
+build=$(mktemp -d "$(dirname -- "$out")/.owner-build.XXXXXXXX")
+trap 'rm -rf "$build"' EXIT
+target=$(/usr/bin/uname -m)-apple-macosx15.0
+/usr/bin/xcrun --sdk macosx clang -target "$target" -Wno-deprecated-declarations -c \
+    "$src/TrustedApplication.c" -o "$build/trusted.o"
+/usr/bin/xcrun --sdk macosx swiftc -O -target "$target" -swift-version 5 -parse-as-library \
+    -module-name AgentBotOwnerPresence \
+    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/OwnerKey.swift" \
+    "$src/FreshOwnerStore.swift" "$src/OwnerFirstEnrollment.swift" "$src/OwnerExecutable.swift" "$src/Main.swift" "$build/trusted.o" \
+    -o "$build/ai.true-line.agent-bot-owner-presence"
+ln "$build/ai.true-line.agent-bot-owner-presence" "$out"

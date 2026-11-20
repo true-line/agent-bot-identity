@@ -21,9 +21,10 @@ import {
 const USAGE = `usage: agent-bot machine <command> | agent-bot pair [--repin] | agent-bot unpair
   pair [--repin]               trust this account's agent-daemon key with agent-machine and pin daemon.pub
   pair comms [--broker NAME]   pair this daemon with the agent-comms broker (alias for daemon pair-comms)
-  owner-public-key             print the protected macOS owner approval public key as JSON
+  init-owner-key               initialize the protected macOS owner key for authorized first enrollment
+  owner-public-key             read the existing protected macOS owner public key
   review-first-hq FILE         review one transferred first-HQ plan in a temporary local Approvals page
-  approve-pairing              approve a Machine challenge from stdin and print its signed proof as JSON
+  approve-pairing              approve an exact Machine pairing challenge with owner presence
   attest                       attest the existing local pairing to this device's enrolled Harbor
   unpair                       revoke the agent-daemon peer and drop the daemon.pub pin
   status                       show pairing state, then a signed agent-machine status round trip when paired`;
@@ -112,7 +113,7 @@ export async function runMachineCli(argv = process.argv.slice(2), {
     stdout.write(`First-HQ review ${result}.\n`);
     return result === 'approved' ? 0 : 1;
   }
-  if (command === 'owner-public-key' || command === 'approve-pairing') {
+  if (['init-owner-key', 'owner-public-key', 'approve-pairing'].includes(command)) {
     if (rest.length) {
       stderr.write(`${USAGE}\n`);
       return 1;

@@ -2257,6 +2257,13 @@ test('first-HQ review and signed proof belong to one direct, authorized web sess
     assert.deepEqual(Object.keys(proof).sort(), ['public_key', 'signature']);
     assert.equal(proof.public_key, pub);
     assert.equal((await post('approve', review)).status, 409);
+    const { approveFirstHQ } = await import('../identity/machine-owner-presence.mjs');
+    onSign = () => approveFirstHQ(challenge, { platform: 'darwin', checkPath() { throw new Error('missing fixture'); } });
+    const unsupported = await preview();
+    const unavailable = await post('approve', unsupported);
+    assert.equal(unavailable.status, 503);
+    assert.match((await unavailable.json()).error, /signed Machine owner helper or its protected credential is unavailable/);
+    assert.equal((await post('approve', unsupported)).status, 409);
     onSign = () => { throw new Error('canceled'); };
     assert.equal((await post('approve', await preview())).status, 409);
     onSign = () => { clock.value = new Date(clock.value.getTime() + 120000); };
@@ -2264,6 +2271,6 @@ test('first-HQ review and signed proof belong to one direct, authorized web sess
     challenge.expires_at = clock.value.getTime() / 1000 + 120;
     onSign = () => ui('/ui/api/logout', { method: 'POST', body: {}, cookie: owner });
     assert.equal((await post('approve', await preview())).status, 401);
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
   }, { webDeps });
 });

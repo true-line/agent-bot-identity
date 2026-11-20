@@ -904,54 +904,41 @@ On protected macOS, Machine holds host credentials in the admin account.
 HQ pairs from its own account. The daily user's account approves the exact
 HQ and Machine keys with Touch ID or the login password.
 
-The following owner commands require a separately released, provisioned
-Developer ID app at `/Applications/AgentBotOwnerPresence.app` and the
-organization's exact Team ID in `settings.keydTeamId`. The CLI verifies the
-app and its executable before invoking them. Each installation must keep the
-app and its parent directories outside the daily user's write access.
+For a Mac with no previous pairing, the administrator installs the signed
+owner CLI from authenticated release bytes. From a reviewed, administrator-controlled checkout, use
+`sudo /usr/bin/ruby --disable-gems owner-presence-macos/install.rb SIGNED_EXECUTABLE APPROVED_TEAM APPROVED_SHA256`.
+Obtain the team and SHA-256 independently from the approved release record.
+In the daily owner’s Terminal, `id -u` gives that account’s UID. After checking
+that the Mac has no prior or archived enrollment, the administrator runs
+`sudo /Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence authorize-first-enrollment UID --no-prior-enrollment`.
+This gives the selected account a five-minute first-enrollment permit.
+With the organization's approved Developer ID team configured in
+`settings.keydTeamId`, the daily owner runs `agent-bot machine init-owner-key`
+in their login session. A daily account that has not loaded the organization
+profile can use the fixed executable directly as shown in the
+[first-enrollment procedure](owner-presence-macos/FIRST-ENROLLMENT.md).
+The CLI creates a non-exportable Secure Enclave P-256 key. Its
+device-bound reference is stored in the owner's login Keychain with access
+restricted to the signed executable. The command returns only the public key.
+If the permit expires or initialization stops before a key exists, the same
+administrator can repeat the history checks using `retry-first-enrollment`
+with the same UID and declaration. Read an already-created key with
+`owner-public-key`.
 
-- `agent-bot machine owner-public-key` prints the owner's Secure Enclave
-  public key as JSON, creating it on first use. Give the independently
-  verified public key to the admin who pins it in Machine.
-- `agent-bot machine approve-pairing < challenge.json > proof.json` takes a
-  fresh challenge issued by Machine. Compare **both** fingerprints in the
-  native prompt with the intended Machine and HQ before approving. Give
-  the proof to the admin to complete enrollment. A refusal produces no proof.
+The prefix administrator independently verifies the public key and pins it
+with `managed-machine daemon pair --pin-owner KEY`. To read the same public
+key again, use `agent-bot machine owner-public-key`. An older owner key or
+pairing requires its own continuity procedure. Keep the existing pin. To remove
+the installed owner helper, follow [Remove the owner CLI](owner-presence-macos/FIRST-ENROLLMENT.md#remove-the-owner-cli).
 
-Packaging the separate approval app requires a matching Developer ID
-provisioning profile and a Keychain access group for its application
-identifier. Physical Mac qualification includes running the signed app,
-verifying its proof in Machine and completing a signed HQ request.
-
-For a first HQ account, the administrator transfers the JSON challenge exported
-by Machine. From the signed-in daily owner's terminal, run:
-
-```sh
-agent-bot machine review-first-hq /path/to/first-hq-challenge.json
-```
-
-The daily account needs the Identity CLI and the installed, notarized
-qualification signer that supports this operation. Both must come from the
-version under test. With a verified Identity checkout and Node 20 or newer,
-use its absolute `/path/to/agent-bot` launcher from the daily owner's
-ordinary terminal directory. Configure the organization's exact
-`settings.keydTeamId` in that account and have the administrator independently
-pin the owner's public key in Machine before exporting a challenge.
-
-The command opens a short-lived local Approvals page for the imported plan.
-It works before a daily daemon, web principal or HQ pairing exists.
-Closing the page, discarding the review or reaching expiry ends the session.
-Owners with an existing machine-wide approving web principal may also import
-the file in the running daemon's direct local **Approvals** tab.
-
-Compare the Machine SHA-256 fingerprint with the one
-obtained independently from the administrator, then review the plan digest
-and every step, including any LaunchDaemon content. Choose **Approve with
-owner presence** and check the same fingerprint and digest in the Mac prompt.
-Return the resulting public proof to the administrator for Machine to verify.
-The two-minute challenge can be replaced by the administrator if it expires.
-This private qualification path requires the provisioned owner app with the
-first-HQ operation. HQ pairing is a separate approval after provisioning.
+- `agent-bot machine review-first-hq FILE` opens the one-time local plan
+  review. Compare the Machine fingerprint with the administrator's independent
+  copy and inspect the plan, including the LaunchDaemon when present. Confirm
+  the exact action with Touch ID or the login password. Closing the page,
+  discarding the plan or reaching expiry ends the session.
+- `agent-bot machine approve-pairing < challenge.json` requests fresh consent
+  to sign the exact HQ and Machine pairing transcript. Return the public proof
+  to Machine for verification against the pinned owner key.
 
 For existing account-local setups, the owner pairs
 this account's agent-daemon with it once: `agent-bot pair` (`agent-bot machine pair`, owner

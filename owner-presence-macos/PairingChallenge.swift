@@ -1,21 +1,15 @@
 import CryptoKit
 import Foundation
-import Security
 
 enum PresenceFailure: Error, LocalizedError {
-    case invalidChallenge, expired, unavailable, unsigned, missingKey, invalidKey, declined
-    case keychain(OSStatus)
+    case invalidChallenge, expired, declined, incomplete
 
     var errorDescription: String? {
         switch self {
         case .invalidChallenge: return "Invalid Machine owner challenge."
-        case .expired: return "Machine owner challenge expired."
-        case .unavailable: return "Secure Enclave owner approval is unavailable."
-        case .unsigned: return "A provisioned Developer ID owner approval application is required."
-        case .missingKey: return "Create the owner public key before approving a Machine challenge."
-        case .invalidKey: return "The enrolled owner key could not be used."
         case .declined: return "Owner approval was declined."
-        case .keychain(let status): return "Owner Keychain operation failed (\(status))."
+        case .incomplete: return "Owner authentication did not complete."
+        case .expired: return "Machine owner challenge expired."
         }
     }
 }
