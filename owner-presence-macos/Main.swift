@@ -3,17 +3,33 @@ import Foundation
 
 @main
 enum OwnerPresenceMain {
-    static func readRequest(firstHQ: Bool) throws -> OwnerRequest {
-        let limit = firstHQ ? FirstHQChallenge.maximumBytes : PairingChallenge.maximumBytes
+    static func readInput(limit: Int) throws -> Data {
         var bytes = Data()
         while let part = try FileHandle.standardInput.read(upToCount: limit + 1 - bytes.count), !part.isEmpty {
             bytes.append(part)
             guard bytes.count <= limit else { throw PresenceFailure.invalidChallenge }
         }
+        return bytes
+    }
+
+    static func readRequest(_ command: String) throws -> OwnerRequest {
+        let limit: Int
+        switch command {
+        case "approve-pairing": limit = PairingChallenge.maximumBytes
+        case "approve-first-hq": limit = FirstHQChallenge.maximumBytes
+        case "approve-harness-launch-install", "approve-harness-launch-retire": limit = HarnessLaunchChallenge.maximumBytes
+        default: throw PresenceFailure.invalidChallenge
+        }
+        let bytes = try readInput(limit: limit)
         let now = Int64(Date().timeIntervalSince1970)
         do {
-            return firstHQ ? .firstHQ(try FirstHQChallenge.parse(bytes, now: now))
-                           : .pairing(try PairingChallenge.parse(bytes, now: now))
+            switch command {
+            case "approve-pairing": return .pairing(try PairingChallenge.parse(bytes, now: now))
+            case "approve-first-hq": return .firstHQ(try FirstHQChallenge.parse(bytes, now: now))
+            case "approve-harness-launch-install": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .install, now: now))
+            case "approve-harness-launch-retire": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .retire, now: now))
+            default: throw PresenceFailure.invalidChallenge
+            }
         } catch let refusal as PresenceFailure {
             throw refusal
         } catch {
@@ -22,6 +38,16 @@ enum OwnerPresenceMain {
     }
 
     static func run(_ args: [String]) async throws {
+        if args.first == "preview-harness-launch" {
+            guard args.count == 4, let action = HarnessLaunchAction(rawValue: args[1]) else { throw PresenceFailure.invalidChallenge }
+            let data = try readInput(limit: 32 * 1024)
+            guard let plan = String(data: data, encoding: .utf8), Data(plan.utf8) == data else { throw PresenceFailure.invalidChallenge }
+            let preview: String
+            do { preview = try renderHarnessReview(plan, planID: args[2], digest: args[3], action: action) }
+            catch { throw PresenceFailure.invalidChallenge }
+            try FileHandle.standardOutput.write(contentsOf: Data((preview + "\n").utf8))
+            return
+        }
         if args.first == "authorize-first-enrollment" || args.first == "retry-first-enrollment" {
             guard args.count == 3, args[2] == "--no-prior-enrollment",
                   let uid = uid_t(args[1]), uid > 0, String(uid) == args[1]
@@ -34,15 +60,17 @@ enum OwnerPresenceMain {
             }
             return
         }
-        guard args.count == 1, ["init-owner-key", "owner-public-key", "approve-pairing", "approve-first-hq"].contains(args[0])
-        else { throw PresenceFailure.invalidChallenge }
+        guard args.count == 1 else { throw PresenceFailure.invalidChallenge }
         let request: OwnerRequest?
         switch args[0] {
-        case "approve-pairing": request = try readRequest(firstHQ: false)
-        case "approve-first-hq": request = try readRequest(firstHQ: true)
-        default: request = nil
+        case "init-owner-key", "owner-public-key": request = nil
+        default: request = try readRequest(args[0])
         }
         let verify = { try OwnerExecutable.verify() }
+        if case .harnessLaunch(let challenge) = request {
+            try verify()
+            try HarnessMachinePin.verify(challenge.machine_key)
+        }
         let store = try FreshOwnerStore.open(verifyExecutable: verify)
         let result: [String: String]
         switch args[0] {

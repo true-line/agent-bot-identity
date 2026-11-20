@@ -50,12 +50,16 @@ struct PairingChallenge: Decodable {
     }
 }
 
-func machineFingerprint(_ hex: String) -> String {
+func machineKeyBytes(_ hex: String) -> Data {
     // The parser has already validated the 32 lowercase-hex octets.
     let octets = Array(hex.utf8)
     func value(_ c: UInt8) -> UInt8 { c <= 57 ? c - 48 : c - 87 }
     let bytes = stride(from: 0, to: octets.count, by: 2).map {
         (value(octets[$0]) << 4) | value(octets[$0 + 1])
     }
-    return SHA256.hash(data: Data(bytes)).map { String(format: "%02x", $0) }.joined()
+    return Data(bytes)
+}
+
+func machineFingerprint(_ hex: String) -> String {
+    SHA256.hash(data: machineKeyBytes(hex)).map { String(format: "%02x", $0) }.joined()
 }

@@ -37,3 +37,48 @@ sudo /usr/bin/ruby --disable-gems owner-presence-macos/install.rb --uninstall AP
 ```
 
 Removal checks the executable and its publisher record before deleting either file. The command can be repeated after an interruption. The owner’s Keychain item, first-enrollment history and Machine pin remain available for continuity. Removing the helper does not authorize a fresh enrollment.
+
+## Preview a harness launch plan
+
+The flat helper can display the two file changes and exact adapter arguments in a
+saved install or retirement plan. On the paired HQ, obtain the plan ID, SHA-256
+and canonical JSON from `machine members-plans get PLAN_ID --socket PATH`.
+Use the ID and digest from that verified lookup. Keep the canonical text’s
+terminating newline. For example, with the HQ output in `lookup.json`:
+
+```sh
+plan_id=$(jq -er '.plan_id' lookup.json)
+plan_sha256=$(jq -er '.plan_digest' lookup.json)
+jq -jr '.plan_canonical' lookup.json |
+  /Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+    preview-harness-launch install "$plan_id" "$plan_sha256"
+```
+
+Use `retire` to display the original installation ID and digest as well.
+The preview checks plan contents against the supplied digest. Authentication
+of the lookup occurs on HQ. Preview requires no owner key and issues no proof.
+
+## Approve a paired harness launch rule
+
+On a Mac enrolled with this flat helper, the dedicated HQ exports one
+Machine-signed challenge with `machine harness-launch-install export PLAN_ID
+--socket SOCKET` or the corresponding `harness-launch-retire` command.
+Transfer the complete exported line to the daily owner. In that account's
+local desktop session, run the matching command:
+
+```sh
+umask 077
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  approve-harness-launch-install < challenge.json > owner-proof.json
+```
+
+For retirement, use `approve-harness-launch-retire`. The helper verifies the
+Machine signature against the public key in the administrator-controlled Homebrew
+channel and checks the existing owner key. In its native review, inspect the full
+arguments, accounts, file changes and digests. Continue to owner authentication
+only for the displayed plan. Cancellation, expiry or an unavailable credential
+requires a fresh transfer. Return the proof from a successful run to the paired
+HQ's `approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`
+command for the same action. Machine consumes the challenge once. Approval and
+root application are separate operations. A historical owner key held by a
+different provider requires the existing key-continuity procedure.

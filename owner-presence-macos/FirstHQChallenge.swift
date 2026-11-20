@@ -1,16 +1,17 @@
 import CryptoKit
 import Foundation
 
-// A separate purpose under the pinned owner key. Only these two challenge
-// types can reach OwnerKey, and each constructs its own signed bytes.
+// Each admitted owner operation constructs its own purpose-bound signed bytes.
 enum OwnerRequest {
     case pairing(PairingChallenge)
     case firstHQ(FirstHQChallenge)
+    case harnessLaunch(HarnessLaunchChallenge)
 
     var signedBytes: Data {
         switch self {
         case .pairing(let challenge): return challenge.signedBytes
         case .firstHQ(let challenge): return challenge.signedBytes
+        case .harnessLaunch(let challenge): return challenge.signedBytes
         }
     }
 
@@ -18,6 +19,9 @@ enum OwnerRequest {
         switch self {
         case .pairing(let challenge): return challenge.approvalReason
         case .firstHQ(let challenge): return challenge.approvalReason
+        case .harnessLaunch(let c):
+            let verb = c.action == "harness-launch-install" ? "Install" : "Retire"
+            return "\(verb) the reviewed harness launch rule?\nMachine SHA-256: \(machineFingerprint(c.machine_key))\nPlan: \(c.plan_id)\nPlan SHA-256: \(c.plan_digest)"
         }
     }
 
@@ -25,6 +29,7 @@ enum OwnerRequest {
         switch self {
         case .pairing(let challenge): try challenge.checkExpiry(now: now)
         case .firstHQ(let challenge): try challenge.checkExpiry(now: now)
+        case .harnessLaunch(let challenge): try challenge.checkExpiry(now: now)
         }
     }
 }
