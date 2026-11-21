@@ -144,3 +144,27 @@ umask 077
 ```
 
 The review shows the existing dedicated HQ account, the service action, the owner and UID, the archive and Node paths and digests, any runtime directory change and the complete LaunchDaemon configuration. After reviewing those effects and authenticating, return the successful proof through the paired HQ's `machine hq-service-recovery approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. Machine checks the current pairing and the stopped service before accepting the proof. The administrator applies the approved plan separately.
+
+## Approve a paired qualification run
+
+Have the dedicated HQ export the exact approval plan using
+`machine harness-qualification-run export PLAN_ID --socket SOCKET`.
+An older review-only plan can still be previewed. Generate a new plan with
+the Machine planner before asking for approval.
+Transfer the complete signed response to the daily owner and use the installed
+flat owner CLI in the owner's local desktop session:
+
+```sh
+umask 077
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  approve-harness-qualification-run < challenge.json > owner-proof.json
+```
+
+The helper verifies the Machine signature, installed Machine pin and enrolled
+owner. Its **Harness qualification run approval** review shows the exact candidate, fixed runner, test
+provider, disposable state and profile assignments. Continue to owner
+authentication only if the displayed plan matches the intended run. Return
+the challenge and proof to the same paired HQ's
+`machine harness-qualification-run approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`
+command. The proof is scoped to that qualification plan. Approval alone does
+not run the test, create a launch rule or certify an adapter.
