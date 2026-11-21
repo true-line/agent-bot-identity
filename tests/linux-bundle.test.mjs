@@ -863,7 +863,7 @@ test('Linux reads the kernel argv of a running Node service under a spaced prefi
   });
   await Promise.race([once(child.stdout, 'data'), once(child, 'exit').then(() => { throw new Error('fixture exited before startup'); })]);
   // The real ps performs UID and kernel-name selection; expose only our child.
-  writeFileSync(box.ps, `#!/bin/sh\n/usr/bin/ps "$@" | awk '$1 == ${child.pid}'\n`);
+  writeFileSync(box.ps, `#!/bin/sh\nps "$@" | awk '$1 == ${child.pid}'\n`);
   const result = runScript(INSTALL, { home: box.home, cwd: box.archive, systemctl: box.systemctl,
     ps: box.ps, procRoot: '/proc' });
   assert.notEqual(result.status, 0, 'the running hand-launched service should block a second install');
