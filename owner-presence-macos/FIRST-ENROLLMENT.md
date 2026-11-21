@@ -58,6 +58,25 @@ Use `retire` to display the original installation ID and digest as well.
 The preview checks plan contents against the supplied digest. Authentication
 of the lookup occurs on HQ. Preview requires no owner key and issues no proof.
 
+## Preview a single-use qualification plan
+
+Take the plan ID, SHA-256 and exact `plan` string from the Machine
+`members plan --harness-qualification` output. Keep the plan's terminating
+newline. With the canonical bytes in `plan.json` and the ID and digest from
+the same Machine response:
+
+```sh
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  preview-harness-qualification "$plan_id" "$plan_sha256" < plan.json
+```
+
+The preview checks the plan bytes against the supplied digest and displays the
+candidate, selected native binary, fixed arguments and code inputs, declared
+host, role, fixed runner and test provider, and gate assignments. It shows the
+SHA-256 of the original planner request for comparison against that request.
+The preview opens no owner key or dialog and produces no proof. A physical
+qualification run still requires its own exact owner approval.
+
 ## Check the installed Machine public key
 
 From the daily account, the installed owner CLI can check the Homebrew channel
