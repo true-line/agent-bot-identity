@@ -1,2 +1,0 @@
-- `agent-bot keyd install` and `uninstall` preserve helpers managed by Machine or another host. Identity retries its own interrupted installs, and `keyd status` and `doctor` direct Machine-managed version updates to Homebrew (true-line/agent-bot-machine#551).
-- A macOS keyd update can read its retained grant after removal of the old executable when the complete stored signing requirement matches.

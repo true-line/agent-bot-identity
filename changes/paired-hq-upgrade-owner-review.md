@@ -1,1 +1,0 @@
-- Add a purpose-bound macOS owner reviewer for paired HQ service upgrades, displaying both release records, the prior receipt reference and the exact LaunchDaemon change before signing with the existing pinned owner key.

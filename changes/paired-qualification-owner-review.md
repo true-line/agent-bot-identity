@@ -1,1 +1,0 @@
-- On macOS, the flat owner CLI shows the exact candidate, runner, test provider, and gate assignments before asking the owner to approve and sign a single-use qualification plan ([Platform #102](https://github.com/true-line/agent-bot-platform/discussions/102)).

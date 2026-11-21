@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "tag": "v0.15.21",
+  "workflows": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "jobs": [
+        "Action Policy",
+        "Verify exact main evidence",
+        "Complete suite",
+        "Windows native custody and pipe preflight",
+        "Darwin owner-decision journal",
+        "Workflow runtime policy",
+        "CLI skill release gate",
+        "Linux CLI bundle (ubuntu-latest, linux-x64)",
+        "Linux CLI bundle (ubuntu-24.04-arm, linux-arm64)",
+        "keyd",
+        "CI"
+      ]
+    }
+  ]
+}
