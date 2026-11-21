@@ -1,1 +1,0 @@
-- `agent-bot machine review-first-hq FILE` opens a temporary local Approvals page for a fresh macOS account to review each transferred provisioning step (#1460).

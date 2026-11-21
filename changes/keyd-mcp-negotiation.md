@@ -1,1 +1,0 @@
-- Identity now pins keyd 0.2.2. Clients asking for an unknown MCP revision receive the supported revision `2025-06-18`, and clients using `2025-03-26` keep that revision (#1465).

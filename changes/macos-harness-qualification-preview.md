@@ -1,1 +1,0 @@
-- On macOS, the owner CLI's `preview-harness-qualification` command verifies the plan digest and shows the exact adapter, test runner, provider and gate assignments for review before a qualification run (#1480).

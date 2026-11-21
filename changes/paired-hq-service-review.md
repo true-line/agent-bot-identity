@@ -1,1 +1,0 @@
-- The macOS owner CLI can review the paired Machine plan for a stopped HQ service, show the exact LaunchDaemon and release, and authorize the repair with the enrolled owner key (#1463).

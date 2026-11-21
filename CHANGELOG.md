@@ -2,6 +2,24 @@
 
 ## 0.15.21
 
+- `agent-bot machine review-first-hq FILE` opens a temporary local Approvals page for a fresh macOS account to review each transferred provisioning step (#1460).
+- The macOS owner authentication prompt names the HQ LaunchDaemon when the first account plan also installs or updates that service.
+- Linux bundle setup now checks the installing account's running Identity and comms services. A separate Machine daemon or another account's installation no longer blocks setup.
+- Verification now checks that the local pilot inference proxy delivers the first streamed event before the provider returns its final usage event.
+- Identity now pins keyd 0.2.2. Clients asking for an unknown MCP revision receive the supported revision `2025-06-18`, and clients using `2025-03-26` keep that revision (#1465).
+- `agent-bot keyd install` and `uninstall` preserve helpers managed by Machine or another host. Identity retries its own interrupted installs, and `keyd status` and `doctor` direct Machine-managed version updates to Homebrew (true-line/agent-bot-machine#551).
+- A macOS keyd update can read its retained grant after removal of the old executable when the complete stored signing requirement matches.
+- The native macOS reviewer validates the exact harness account, adapter arguments and sandbox policy in a Machine launch rule, including the original installation digest when retiring the rule (#1470).
+- On macOS, the owner CLI's `preview-harness-qualification` command verifies the plan digest and shows the exact adapter, test runner, provider and gate assignments for review before a qualification run (#1480).
+- Added a native macOS release check that reads an HQ notice through the installed MCP client, verifies the notice is consumed once, and checks that reading the inbox makes no upstream request.
+- The macOS pairing prompt shows the selected ordinary-account HQ UID and binds it to the signed approval. Dedicated HQ pairing keeps its existing approval format (#1464).
+- The macOS owner CLI can review a paired Machine plan to create agent accounts. It shows each account, private group, home and any requested broker directories before asking for owner authentication (#1473).
+- On macOS, the owner CLI can approve installation or retirement of a paired harness launch rule. It shows the target accounts, executable arguments and file changes before asking the enrolled owner to sign, and stays open until authentication and proof delivery finish (#1472).
+- The macOS owner CLI can review the paired Machine plan for a stopped HQ service, show the exact LaunchDaemon and release, and authorize the repair with the enrolled owner key (#1463).
+- Add a purpose-bound macOS owner reviewer for paired HQ service upgrades, displaying both release records, the prior receipt reference and the exact LaunchDaemon change before signing with the existing pinned owner key.
+- On macOS, the flat owner CLI shows the exact candidate, runner, test provider, and gate assignments before asking the owner to approve and sign a single-use qualification plan ([Platform #102](https://github.com/true-line/agent-bot-platform/discussions/102)).
+- On a never-paired Mac, the signed owner CLI can initialize a Secure Enclave owner key after explicit administrator authorization. It keeps its reference in the owner’s login Keychain and requests fresh presence for each approval. Existing owner pins retain their separate continuity procedure (#1315).
+
 - The owner dashboard lists and reviews macOS member-account plans from the same Application Support directory used by `managed-machine members apply` (#1452).
 - Owners can run `agent-bot machine attest` on an enrolled device to register its existing agent-daemon and agent-machine pairing with Harbor (true-line/agent-bot#66).
 - Prepare the existing MCP inbox command to use the supported HQ SDK query capability from inherited Soul member inputs, with lazy standalone compatibility and no fallback or consume replay. The genuine shared-release pin, cancellable bootstrap and positive installed-process acceptance remain pending; no production activation is claimed (#1444).
