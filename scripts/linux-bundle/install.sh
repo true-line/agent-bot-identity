@@ -19,6 +19,7 @@
 #   AGENT_BUNDLE_SOURCE      the unpacked ./bundle directory to copy from
 #   AGENT_BOT_SYSTEMCTL      systemctl path (a fake, in tests)
 #   AGENT_BOT_PS             ps path (a fake, in tests)
+#   AGENT_BOT_PROC_ROOT      companion cmdline fixture when ps is injected
 #
 # Souls are never touched: nothing here reads, moves or deletes
 # ~/.agent-bot/souls or $AGENT_BOT_SOULS_HOME.

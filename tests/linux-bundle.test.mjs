@@ -8,8 +8,9 @@
 // not find — another pair, and that cannot be observed without running it.
 
 import { test } from 'node:test';
+import { once } from 'node:events';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -125,20 +126,31 @@ exit 0
   return { path, log };
 }
 
-function fakePs(home, lines) {
+function fakePs(home, processes) {
   const bin = join(home, 'fakes');
   mkdirSync(bin, { recursive: true });
   const path = join(bin, 'ps');
+  for (const { pid, argv } of processes) {
+    const directory = join(bin, 'proc', String(pid));
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'cmdline'), argv.join('\0') + '\0');
+  }
   writeFileSync(path, `#!/bin/sh
-cat <<'PROCESSES'
-${lines.join('\n')}
+# Model ps effective UID selection and kernel name; procfs holds actual argv.
+case "$*" in
+  "-ww -u $(id -u) -o pid=,ucomm=") filter=selected ;;
+  *) filter=all ;;
+esac
+awk -v filter="$filter" 'filter == "selected" && $1 == "other" { next }
+  { print $2, $3 }' <<'PROCESSES'
+${processes.map(({ other, pid, comm }) => `${other ? 'other' : 'self'} ${pid} ${comm}`).join('\n')}
 PROCESSES
 `);
   chmodSync(path, 0o755);
   return path;
 }
 
-function runScript(script, { home, cwd, args = [], systemctl, ps, shell = 'sh' }) {
+function runScript(script, { home, cwd, args = [], systemctl, ps, procRoot, shell = 'sh' }) {
   return spawnSync(shell, [script, ...args], {
     cwd,
     encoding: 'utf8',
@@ -148,7 +160,7 @@ function runScript(script, { home, cwd, args = [], systemctl, ps, shell = 'sh' }
       SHELL: '/bin/bash',
       TMPDIR: join(home, 'tmp'),
       ...(systemctl ? { AGENT_BOT_SYSTEMCTL: systemctl } : {}),
-      ...(ps ? { AGENT_BOT_PS: ps } : {}),
+      ...(ps ? { AGENT_BOT_PS: ps, AGENT_BOT_PROC_ROOT: procRoot ?? join(dirname(ps), 'proc') } : {}),
     },
   });
 }
@@ -789,12 +801,100 @@ test('#337: a symlink at a wrapper path is foreign too', () => {
 
 // -------------------------------------------- decision 2: exactly one pair
 
+test('the process probe identifies only this user’s running Identity or comms services', () => {
+  const unrelated = [
+    { pid: 7001, comm: 'managed-machine', argv: ['/opt/homebrew/bin/managed-machine', 'daemon', 'run'] },
+    { pid: 7002, comm: 'node', argv: ['/opt/node', '/work/other-agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7003, comm: 'sh', argv: ['/bin/sh', '-c', 'echo', '/work/agent-bot', 'daemon', 'run'] },
+    { pid: 7004, comm: 'node', argv: ['/opt/node', '/work/agent-bot.mjs', 'broker', 'status'] },
+    { pid: 7005, comm: 'agent-comms', argv: ['/work/agent-comms', 'broker', 'list'] },
+    { pid: 7006, comm: 'node', argv: ['/opt/node', '/work/agent-bot.mjs', 'daemon', 'status'] },
+    { pid: 7007, comm: 'node', argv: ['/opt/node', '/another/agent-bot.mjs', 'daemon', 'run'], other: true },
+    { pid: 7008, comm: 'node', argv: ['/opt/node', '/work/tool.mjs', '/opt/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7009, comm: 'grep', argv: ['grep', '/opt/agent-bot', 'daemon', 'run'] },
+    { pid: 7010, comm: 'node', argv: ['node', '--eval', 'console.log(process.argv)', '/work/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7011, comm: 'node', argv: ['node', '--no-warnings', '/work/tool.mjs', '/work/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7012, comm: 'node', argv: ['node', '--no-warnings', '/work/pilot run 1/agent-bot.mjs', 'daemon', 'status'] },
+  ];
+  const box = machine('unrelated-processes', { processes: unrelated });
+  try { const result = box.install(); assert.equal(result.status, 0, result.stderr); }
+  finally { box.cleanup(); }
+
+  const related = [
+    { pid: 7101, comm: 'agent-bot', argv: ['/opt/Agent Tools - Stable/bin/agent-bot', 'daemon', 'run'] },
+    { pid: 7102, comm: 'node', argv: ['/opt/Node Tools/node', '/opt/Agent Tools - Stable/lib/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7103, comm: 'node', argv: ['node', '/opt/Agent Tools/lib/agent-daemon.mjs', 'run'] },
+    { pid: 7104, comm: 'node', argv: ['node', '/opt/Agent Tools/lib/agent-comms/bin/agent-comms.mjs', 'broker', 'run', '--single-account'] },
+    { pid: 7105, comm: 'node', argv: ['node', '/opt/Agent Tools/lib/agent-bot.mjs', 'broker', 'run', '--single-account'] },
+    { pid: 7106, comm: 'sh', argv: ['/bin/sh', '/opt/Agent Tools - Stable/bin/agent-bot', 'daemon', 'run'] },
+    { pid: 7107, comm: 'node', argv: ['node', '/work/pilot run 1/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7108, comm: 'node', argv: ['/opt/Node Tools/node', '--no-warnings', '--enable-source-maps', '/work/pilot run 1/agent-comms.mjs', 'broker', 'run', '--single-account'] },
+    { pid: 7109, comm: 'node', argv: ['node', '/work/test run 2/agent-daemon.mjs', 'run'] },
+    { pid: 7110, comm: 'node', argv: ['node', '/work/test run 3/owner-supervised-broker.mjs'] },
+    { pid: 7111, comm: 'node', argv: ['/work/node tools/bin/node', '/work/node tools/lib/agent-bot.mjs', 'daemon', 'run'] },
+    { pid: 7112, comm: 'node', argv: ['/work/node tools/bin/node', '/work/pilot /suite/agent-bot.mjs', 'daemon', 'run'] },
+  ];
+  const other = machine('running-pair', { processes: [...unrelated, ...related] });
+  try {
+    const result = other.install();
+    assert.notEqual(result.status, 0);
+    for (const row of related) assert.match(result.stdout, new RegExp('process ' + row.pid + ' '));
+    assert.doesNotMatch(result.stdout, /process (?:700[0-9]|701[0-2]) /);
+  } finally { other.cleanup(); }
+});
+
+test('Linux reads the kernel argv of a running Node service under a spaced prefix', {
+  skip: process.platform !== 'linux', timeout: 10_000,
+}, async (t) => {
+  const box = machine('live-proc');
+  t.after(box.cleanup);
+  const dir = join(box.root, 'node tools');
+  mkdirSync(dir);
+  const node = join(dir, 'node');
+  const entry = join(dir, 'agent-bot.mjs');
+  symlinkSync(process.execPath, node);
+  writeFileSync(entry, "process.stdout.write('ready'); setInterval(() => {}, 60000);");
+  const child = spawn(node, [entry, 'daemon', 'run'], { stdio: ['ignore', 'pipe', 'ignore'], env: {} });
+  t.after(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = once(child, 'exit');
+    child.kill();
+    await exited;
+  });
+  await Promise.race([once(child.stdout, 'data'), once(child, 'exit').then(() => { throw new Error('fixture exited before startup'); })]);
+  // The real ps performs UID and kernel-name selection; expose only our child.
+  writeFileSync(box.ps, `#!/bin/sh\nps "$@" | awk '$1 == ${child.pid}'\n`);
+  const result = runScript(INSTALL, { home: box.home, cwd: box.archive, systemctl: box.systemctl,
+    ps: box.ps, procRoot: '/proc' });
+  assert.notEqual(result.status, 0, 'the running hand-launched service should block a second install');
+  assert.ok(result.stdout.includes(`process ${child.pid} ${entry} daemon run`));
+});
+
+test('an unreadable live process is distinguished from a process that already exited', () => {
+  const box = machine('missing-cmdline', { processes: [
+    { pid: 7101, comm: 'node', argv: ['node', 'other.mjs'] },
+    { pid: 7102, comm: 'node', argv: ['node', 'other.mjs'] },
+  ] });
+  try {
+    const proc = join(dirname(box.ps), 'proc');
+    rmSync(join(proc, '7101/cmdline'));
+    rmSync(join(proc, '7102'), { recursive: true });
+    const result = box.install();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /could not inspect process 7101/);
+    assert.doesNotMatch(result.stderr, /could not inspect process 7102/);
+  } finally { box.cleanup(); }
+});
+
 test('#337: another install\u2019s pair is refused, and --migrate takes it over', () => {
   const foreignUnit = '[Unit]\nDescription=homebrew agent-bot daemon\n';
   const box = machine('second-pair', {
     active: 'active',
     enabled: 'enabled',
-    processes: ['4242 /opt/homebrew/libexec/agent-bot daemon run', '4243 /opt/homebrew/bin/agent-comms broker'],
+    processes: [
+      { pid: 4242, comm: 'agent-bot', argv: ['/opt/homebrew/libexec/agent-bot', 'daemon', 'run'] },
+      { pid: 4243, comm: 'agent-comms', argv: ['/opt/homebrew/bin/agent-comms', 'broker', 'run'] },
+    ],
   });
   try {
     mkdirSync(join(box.home, '.config', 'systemd', 'user'), { recursive: true });
@@ -861,7 +961,7 @@ test('#337: this install\u2019s own running pair is never mistaken for a second 
     // systemctl and ps are per-run, so the second run can be told the truth.
     const running = fakeSystemctl(box.root, { active: 'active', enabled: 'enabled' });
     const runningPs = fakePs(box.root, [
-      `999 ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'node', 'bin', 'node')} ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'lib', 'agent-bot', 'agent-bot.mjs')} daemon run`,
+      { pid: 999, comm: 'node', argv: [join(box.home, '.local/share/agent-bot/bundle/node/bin/node'), join(box.home, '.local/share/agent-bot/bundle/lib/agent-bot/agent-bot.mjs'), 'daemon', 'run'] },
     ]);
     const again = spawnSync('sh', [INSTALL], {
       cwd: box.archive,

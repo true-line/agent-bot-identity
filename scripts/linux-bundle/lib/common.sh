@@ -362,17 +362,37 @@ detect_foreign_pair() {
     esac
   done
 
-  if command -v "$(ps_cmd)" > /dev/null 2>&1; then
-    "$(ps_cmd)" -eo pid=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
-    grep -E 'daemon run|agent-comms[^ ]*[ /]broker|agent-comms-broker' "$SCRATCH/ps" \
-      > "$SCRATCH/matches" 2>/dev/null || : > "$SCRATCH/matches"
-    # Drop this probe's own grep and anything inside this install's prefix.
-    grep -vF "$SCRATCH" "$SCRATCH/matches" 2>/dev/null | grep -vF "$PREFIX/" > "$SCRATCH/foreign" \
-      2>/dev/null || : > "$SCRATCH/foreign"
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      add_finding "process ${line%% *} ${line#* }"
-    done < "$SCRATCH/foreign"
+  # Select this effective UID. Only inspect the command lines of possible
+  # launcher processes; process arguments can contain unrelated private data.
+  proc_root=/proc
+  if [ -n "${AGENT_BOT_PS:-}" ] && [ -n "${AGENT_BOT_PROC_ROOT:-}" ]; then
+    proc_root=$AGENT_BOT_PROC_ROOT
+  fi
+  if ! "$(ps_cmd)" -ww -u "$(id -u)" -o pid=,ucomm= > "$SCRATCH/ps" 2>/dev/null; then
+    warn "could not enumerate this user's processes; only service units were checked"
+  elif [ -s "$SCRATCH/ps" ] && [ ! -d "$proc_root" ]; then
+    warn "process arguments unavailable; only service units were checked"
+  else
+    while read -r pid comm; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      case "$comm" in
+        node|nodejs|sh|dash|bash|zsh|agent-bot|agent-bot.mjs|agent-daemon.mj|agent-daemon.mjs|agent-comms|agent-comms.mjs|agent-comms-bro|agent-comms-brok|agent-comms-broke|agent-comms-broker) ;;
+        *) continue ;;
+      esac
+      procdir=$proc_root/$pid
+      # The kernel preserves argv boundaries. Translate NUL to one record per
+      # argument; mark embedded newlines as control characters, which are not
+      # supported in install paths. Never save or log unrelated arguments.
+      if entry=$(
+        { LC_ALL=C tr '\n\000' '\001\n' |
+          LC_ALL=C PAIR_PREFIX="$PREFIX/" awk -f "$SCRIPT_DIR/lib/foreign-pair.awk"; } < "$procdir/cmdline"
+      ) 2>/dev/null; then
+        if [ -n "$entry" ]; then add_finding "process $pid $entry"; fi
+      elif [ -d "$procdir" ]; then
+        # It is normal for a process to finish between the two reads.
+        warn "could not inspect process $pid"
+      fi
+    done < "$SCRATCH/ps"
   fi
 
   rm -rf "$SCRATCH"

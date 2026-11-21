@@ -205,7 +205,9 @@ AGENT_BOT_SYSTEMCTL=/path/to/fake-systemctl AGENT_BOT_PS=/path/to/fake-ps \
 
 `AGENT_BOT_SYSTEMCTL` and `AGENT_BOT_PS` exist for exactly that: a test never
 reaches a real user manager, and never sees the developer's own running daemon
-and decides it is a second pair.
+and decides it is a second pair. A fake process list with candidates also sets
+`AGENT_BOT_PROC_ROOT` to its matching fixture directory, with NUL-separated
+arguments in `<pid>/cmdline`. The Linux installer uses `/proc` by default.
 
 ## Files
 
