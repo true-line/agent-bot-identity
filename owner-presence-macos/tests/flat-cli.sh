@@ -5,6 +5,15 @@ set -eu
 src=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
+/usr/bin/xcrun --sdk macosx swiftc -target "$(uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
+    "$src/OwnerCommandLifecycle.swift" "$src/tests/OwnerCommandLifecycleTests.swift" -o "$dir/lifecycle"
+"$dir/lifecycle" > "$dir/completion"
+test "$(cat "$dir/completion")" = completed
+status=0
+"$dir/lifecycle" refuse > "$dir/completion" || status=$?
+test "$status" -eq 17
+test ! -s "$dir/completion"
+
 sh "$src/build.sh" "$dir/provider"
 /usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
     "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" \
