@@ -20,6 +20,17 @@ struct ChallengeTests {
             return try FirstHQChallenge.parse(JSONSerialization.data(withJSONObject: envelope), now: 1000)
         }
         let original = firstHQ.plan_canonical
+        precondition(firstHQ.approvalReason.hasPrefix("Provision the first HQ account?\n"))
+        // The native consent message must identify the optional system service as well as the account.
+        for (action, change) in [("create", "install"), ("write", "update")] {
+            let step = #",{"kind":"service","target":"ai.true-line.agent-bot-hq","action":""# + action
+                + #"","owner":"operator","content":"fixture","detail":"apply the verified release"}"#
+            precondition(original.hasSuffix("]}\n"))
+            let combined = try parseFirst(String(original.dropLast(3)) + step + "]}\n")
+            precondition(combined.approvalReason.hasPrefix("Create the first HQ account and " + change + " the HQ LaunchDaemon?\n"))
+            precondition(combined.approvalReason.contains(combined.plan_digest))
+            precondition(combined.signedBytes != firstHQ.signedBytes)
+        }
         for text in [original + " ", original.replacingOccurrences(of: #""members":[]"#, with: #""members":null"#),
                      original.replacingOccurrences(of: #""version":3"#, with: #""version":3,"version":3"#),
                      original.replacingOccurrences(of: #""action":"create""#, with: #""action":"repair""#)] {

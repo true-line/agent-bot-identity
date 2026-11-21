@@ -37,20 +37,25 @@ enum OwnerRequest {
 struct FirstHQChallenge: Decodable {
     let action, machine_key, plan_id, plan_digest, nonce, plan_canonical: String
     let expires_at: Int64
+    private enum ServiceAction: String { case create, write }
+    private var serviceAction: ServiceAction?
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case action, machine_key, plan_id, plan_digest, nonce, plan_canonical, expires_at
+    }
     static let maximumBytes = 64 * 1024
 
     static func parse(_ bytes: Data, now: Int64) throws -> Self {
-        let fields: Set<String> = ["action", "machine_key", "plan_id", "plan_digest", "nonce", "expires_at", "plan_canonical"]
+        let fields = Set(CodingKeys.allCases.map(\.stringValue))
         guard bytes.count <= maximumBytes,
               let json = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               Set(json.keys) == fields else { throw PresenceFailure.invalidChallenge }
-        let c = try JSONDecoder().decode(Self.self, from: bytes)
+        var c = try JSONDecoder().decode(Self.self, from: bytes)
         guard c.action == "first-hq-provision",
               [c.machine_key, c.plan_digest, c.nonce].allSatisfy({ $0.utf8.count == 64 && $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
               c.plan_id.utf8.count == 26, c.plan_id.range(of: #"^plan-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}$"#, options: .regularExpression) != nil
         else { throw PresenceFailure.invalidChallenge }
         try c.checkExpiry(now: now)
-        try c.checkPlan()
+        c.serviceAction = try c.checkPlan()
         return c
     }
 
@@ -58,7 +63,7 @@ struct FirstHQChallenge: Decodable {
         guard now >= 0, expires_at > now, expires_at - now <= 120 else { throw PresenceFailure.expired }
     }
 
-    private func checkPlan() throws {
+    private func checkPlan() throws -> ServiceAction? {
         let bytes = Data(plan_canonical.utf8)
         guard bytes.count <= 48 * 1024, SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == plan_digest,
               let plan = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
@@ -78,16 +83,19 @@ struct FirstHQChallenge: Decodable {
             return "{" + parts.joined(separator: ",") + "}"
         }
         var parts = [try canonicalStep(account, fields: ["kind", "target", "action", "group", "mode", "detail"])]
+        var serviceAction: ServiceAction?
         if steps.count == 2 {
             let service = steps[1]
             guard service["kind"] == "service", service["target"] == "ai.true-line.agent-bot-hq",
-                  ["create", "write"].contains(service["action"]) else { throw PresenceFailure.invalidChallenge }
+                  let action = service["action"].flatMap(ServiceAction.init(rawValue:)) else { throw PresenceFailure.invalidChallenge }
+            serviceAction = action
             parts.append(try canonicalStep(service, fields: ["kind", "target", "action", "owner", "content", "detail"]))
         }
         // Byte equality also rejects duplicate keys, unknown fields, alternate
         // serialization, omitted members and any non-bootstrap header.
         let canonical = #"{"version":3,"hq_account":"_agent-bot-hq","dir":"none","members":[],"steps":["# + parts.joined(separator: ",") + "]}\n"
         guard Data(canonical.utf8) == bytes else { throw PresenceFailure.invalidChallenge }
+        return serviceAction
     }
 
     var signedBytes: Data {
@@ -95,6 +103,12 @@ struct FirstHQChallenge: Decodable {
     }
 
     var approvalReason: String {
-        "Provision the first HQ account?\nMachine SHA-256: \(machineFingerprint(machine_key))\nPlan: \(plan_id)\nPlan SHA-256: \(plan_digest)"
+        let prompt: String
+        switch serviceAction {
+        case .create: prompt = "Create the first HQ account and install the HQ LaunchDaemon?"
+        case .write: prompt = "Create the first HQ account and update the HQ LaunchDaemon?"
+        case nil: prompt = "Provision the first HQ account?"
+        }
+        return "\(prompt)\nMachine SHA-256: \(machineFingerprint(machine_key))\nPlan: \(plan_id)\nPlan SHA-256: \(plan_digest)"
     }
 }

@@ -1,0 +1,1 @@
+- The macOS owner authentication prompt names the HQ LaunchDaemon when the first account plan also installs or updates that service.
