@@ -5,20 +5,23 @@ enum PairedHarnessPurpose: String, CaseIterable {
     case install = "harness-launch-install"
     case retire = "harness-launch-retire"
     case provision = "harness-account-provision"
+    case serviceRecovery = "hq-service-recovery"
 
     var confirmationPrompt: String {
         switch self {
         case .install: return "Install the reviewed harness launch rule?"
         case .retire: return "Retire the reviewed harness launch rule?"
         case .provision: return "Provision the reviewed harness accounts?"
+        case .serviceRecovery: return "Repair the paired HQ service?"
         }
     }
 
-    var launchAction: HarnessLaunchAction? {
+    func review(_ source: String, planID: String, digest: String) throws -> String {
         switch self {
-        case .install: return .install
-        case .retire: return .retire
-        case .provision: return nil
+        case .install: return try renderHarnessReview(source, planID: planID, digest: digest, action: .install)
+        case .retire: return try renderHarnessReview(source, planID: planID, digest: digest, action: .retire)
+        case .provision: return try reviewHarnessAccounts(source, planID: planID, digest: digest)
+        case .serviceRecovery: return try reviewHQServiceRecovery(source, planID: planID, digest: digest)
         }
     }
 }
@@ -66,11 +69,7 @@ struct HarnessLaunchChallenge: Decodable {
         let signed = ["true","","","challenged",rawBody,String(f.timestamp),f.nonce,f.request_nonce].joined(separator: "\n")
         let key = try Curve25519.Signing.PublicKey(rawRepresentation: machineKeyBytes(c.machine_key))
         guard key.isValidSignature(sig, for: Data(signed.utf8)) else { throw invalid }
-        if let launch = action.launchAction {
-            try checkHarnessPlan(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest, action: launch)
-        } else {
-            _ = try reviewHarnessAccounts(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest)
-        }
+        _ = try action.review(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest)
         return c
     }
 
