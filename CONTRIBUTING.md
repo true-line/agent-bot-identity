@@ -81,6 +81,16 @@ Release in two reviewed PRs so the tap stays installable throughout:
    the `skip-changelog` label.
 2. Create and push an annotated `vX.Y.Z` tag on that merged release commit.
    Never move an existing release tag.
+   When the version uses `.github/agent-bot-release.json`, the bot's
+   `create_release` operation creates the tag and source release at the exact
+   reviewed merge commit after its required CI jobs pass. Do not create the
+   tag separately in that path. Its CI evidence is the latest workflow run ID
+   for the source SHA, and every named job must pass in one attempt.
+   `workflow_dispatch` runs on `main` skip `Verify exact main evidence` and
+   cannot qualify a source release. If a push run stalls or fails, use
+   **Re-run all jobs** on that push run. A newer manual run for the same SHA
+   supersedes its evidence; recover with a new reviewed source commit and a
+   successful exact-source `main` push run.
 3. Download the tag's GitHub archive and compute its SHA-256. Verify the
    archive's `package.json` and CLI version match the tag, then update the
    formula `url` and `sha256` together in a follow-up PR. Validate and merge it.
