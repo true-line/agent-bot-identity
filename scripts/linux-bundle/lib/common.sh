@@ -362,54 +362,37 @@ detect_foreign_pair() {
     esac
   done
 
-  if command -v "$(ps_cmd)" > /dev/null 2>&1; then
-    # Both procps and BSD ps select the effective UID with -u. Keep the
-    # kernel command separately: args alone can contain examples in arbitrary
-    # commands. -ww preserves long paths in the release and in the node runtime.
-    "$(ps_cmd)" -ww -u "$(id -u)" -o pid=,ucomm=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
-    awk -v prefix="$PREFIX/" '
-      BEGIN {
-        space = "[[:space:]]+"
-        # Each service entry must be followed immediately by its own operation.
-        entry_op = "(^|/)(agent-bot([.]mjs)?" space "(daemon|broker)|agent-comms([.]mjs)?" space "broker|agent-daemon[.]mjs|agent-comms-broker)" space "run([[:space:]]|$)"
-      }
-      {
-        pid = $1; comm = $2
-        if (pid !~ /^[0-9]+$/ || comm !~ /^(agent-bot(\.mjs)?|agent-daemon\.mj[s]?|agent-comms(\.mjs)?|agent-comms-bro(k(er?)?)?|node(js)?|sh|dash|bash|zsh)$/) next
-        sub(/^[[:space:]]*[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+/, "")
-        args = $0
-        # The launcher may have execed Node, or a shell may still be running
-        # the wrapper. Strip just that executable, including a path with spaces.
-        if (match($0, /(^|\/)(node(js)?|sh|dash|bash|zsh)[[:space:]]+/)) {
-          runtime = substr($0, 1, RSTART + RLENGTH - 1)
-          sub(/[[:space:]]+$/, "", runtime)
-          if (runtime ~ /[[:space:]]+(\/|\.\.?\/)/) next
-          $0 = substr($0, RSTART + RLENGTH)
-          if (runtime ~ /(^|\/)node(js)?$/) {
-            # These Node options take no arguments and still run the entry.
-            sub(/^((--no-warnings|--enable-source-maps|--trace-warnings)[[:space:]]+)+/, "")
-            sub(/^--[[:space:]]+/, "")
-          }
-        }
-        if ($0 ~ /^-/) next
-        if (match($0, entry_op)) {
-          # Keep the path up through the matched entry name. A directory can
-          # itself contain words such as "run" separated by spaces.
-          entry = substr($0, 1, RSTART - 1)
-          name = substr($0, RSTART, RLENGTH)
-          sub(/[[:space:]].*$/, "", name)
-          entry = entry name
-        } else if ($0 ~ /(^|\/)(agent-comms-broker|owner-supervised-broker[.]mjs)$/) {
-          entry = $0
-        } else next
-        if (entry ~ /[[:space:]]+(\/|\.\.?\/)/ || index(entry, prefix) == 1) next
-        print pid, args
-      }
-    ' "$SCRATCH/ps" > "$SCRATCH/foreign"
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      add_finding "process ${line%% *} ${line#* }"
-    done < "$SCRATCH/foreign"
+  # Select this effective UID. Only inspect the command lines of possible
+  # launcher processes; process arguments can contain unrelated private data.
+  proc_root=/proc
+  if [ -n "${AGENT_BOT_PS:-}" ] && [ -n "${AGENT_BOT_PROC_ROOT:-}" ]; then
+    proc_root=$AGENT_BOT_PROC_ROOT
+  fi
+  if ! "$(ps_cmd)" -ww -u "$(id -u)" -o pid=,ucomm= > "$SCRATCH/ps" 2>/dev/null; then
+    warn "could not enumerate this user's processes; only service units were checked"
+  elif [ -s "$SCRATCH/ps" ] && [ ! -d "$proc_root" ]; then
+    warn "process arguments unavailable; only service units were checked"
+  else
+    while read -r pid comm; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      case "$comm" in
+        node|nodejs|sh|dash|bash|zsh|agent-bot|agent-bot.mjs|agent-daemon.mj|agent-daemon.mjs|agent-comms|agent-comms.mjs|agent-comms-bro|agent-comms-brok|agent-comms-broke|agent-comms-broker) ;;
+        *) continue ;;
+      esac
+      procdir=$proc_root/$pid
+      # The kernel preserves argv boundaries. Translate NUL to one record per
+      # argument; mark embedded newlines as control characters, which are not
+      # supported in install paths. Never save or log unrelated arguments.
+      if entry=$(
+        { LC_ALL=C tr '\n\000' '\001\n' |
+          LC_ALL=C PAIR_PREFIX="$PREFIX/" awk -f "$SCRIPT_DIR/lib/foreign-pair.awk"; } < "$procdir/cmdline"
+      ) 2>/dev/null; then
+        if [ -n "$entry" ]; then add_finding "process $pid $entry"; fi
+      elif [ -d "$procdir" ]; then
+        # It is normal for a process to finish between the two reads.
+        warn "could not inspect process $pid"
+      fi
+    done < "$SCRATCH/ps"
   fi
 
   rm -rf "$SCRATCH"
