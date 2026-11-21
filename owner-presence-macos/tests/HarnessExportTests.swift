@@ -10,9 +10,10 @@ struct HarnessExportTests {
         let machineHex = machine.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()
         let ownerPin = owner.publicKey.x963Representation.base64EncodedString()
         let now = Int64(Date().timeIntervalSince1970)
-        for action in [HarnessLaunchAction.install, .retire] {
-            let name = "harness-launch-" + action.rawValue
-            let canonical = try String(contentsOf: fixtures.appendingPathComponent(name + ".json"), encoding: .utf8)
+        for action in PairedHarnessPurpose.allCases {
+            let name = action.rawValue
+            let file = action == .provision ? "harness-account-provision-accounts-and-broker" : name
+            let canonical = try String(contentsOf: fixtures.appendingPathComponent(file + ".json"), encoding: .utf8)
             let digest = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
             let planID = "plan-20261120T122100Z-dcef"
             let body: [String:Any] = ["action":name,"machine_key":machineHex,"hq_key":String(repeating:"45", count:32),
@@ -35,7 +36,9 @@ struct HarnessExportTests {
             precondition(request.signedBytes == Data(expected.utf8))
             let softwareProof = try owner.signature(for: request.signedBytes)
             precondition(owner.publicKey.isValidSignature(softwareProof, for: Data(expected.utf8)))
-            precondition((try? HarnessLaunchChallenge.parse(Data(frame.utf8), action: action == .install ? .retire : .install, now: now)) == nil)
+            for other in PairedHarnessPurpose.allCases where other != action {
+                precondition((try? HarnessLaunchChallenge.parse(Data(frame.utf8), action: other, now: now)) == nil)
+            }
             precondition((try? HarnessLaunchChallenge.parse(Data(frame.utf8), action: action, now: now+120)) == nil)
             for invalid in [frame + "\n{}", frame + "\r\n", frame.replacingOccurrences(of: "{ ", with: "{"),
                 frame.replacingOccurrences(of: #""ok":true"#, with: #""ok":true,"ok":true"#),
@@ -57,6 +60,6 @@ struct HarnessExportTests {
             precondition(process.terminationStatus == 69 && output.fileHandleForReading.readDataToEndOfFile().isEmpty)
             precondition(String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "Machine owner operation unavailable.\n")
         }
-        print("Both signed HQ export purposes passed native validation and uninstalled-provider refusal.")
+        print("All three signed HQ export purposes passed native validation and uninstalled-provider refusal.")
     }
 }

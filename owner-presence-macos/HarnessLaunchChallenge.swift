@@ -1,6 +1,28 @@
 import CryptoKit
 import Foundation
 
+enum PairedHarnessPurpose: String, CaseIterable {
+    case install = "harness-launch-install"
+    case retire = "harness-launch-retire"
+    case provision = "harness-account-provision"
+
+    var confirmationPrompt: String {
+        switch self {
+        case .install: return "Install the reviewed harness launch rule?"
+        case .retire: return "Retire the reviewed harness launch rule?"
+        case .provision: return "Provision the reviewed harness accounts?"
+        }
+    }
+
+    var launchAction: HarnessLaunchAction? {
+        switch self {
+        case .install: return .install
+        case .retire: return .retire
+        case .provision: return nil
+        }
+    }
+}
+
 // Decode exactly one successful, Machine-signed response line from HQ's export.
 // JSONSerialization and JSONDecoder handle the JSON grammar. The scanner only
 // locates the original body octets and counts fields before Foundation can fold
@@ -17,7 +39,7 @@ struct HarnessLaunchChallenge: Decodable {
         let body: HarnessLaunchChallenge
     }
 
-    static func parse(_ input: Data, action: HarnessLaunchAction, now: Int64) throws -> Self {
+    static func parse(_ input: Data, action: PairedHarnessPurpose, now: Int64) throws -> Self {
         let invalid = PresenceFailure.invalidChallenge
         guard input.count <= maximumBytes else { throw invalid }
         let line = input.last == 10 ? Data(input.dropLast()) : input
@@ -31,7 +53,7 @@ struct HarnessLaunchChallenge: Decodable {
         let rawBody = try signedBody(line)
         let f = try JSONDecoder().decode(Frame.self, from: line)
         let c = f.body
-        guard f.ok, f.state == "challenged", c.action == "harness-launch-" + action.rawValue,
+        guard f.ok, f.state == "challenged", c.action == action.rawValue,
               [c.machine_key,c.hq_key,c.plan_digest,c.nonce].allSatisfy({ matchesHarnessField($0, "[0-9a-f]{64}") }),
               c.machine_key != c.hq_key,
               [f.nonce,f.request_nonce].allSatisfy({ matchesHarnessField($0, "[A-Za-z0-9_-]{1,128}") }),
@@ -44,7 +66,11 @@ struct HarnessLaunchChallenge: Decodable {
         let signed = ["true","","","challenged",rawBody,String(f.timestamp),f.nonce,f.request_nonce].joined(separator: "\n")
         let key = try Curve25519.Signing.PublicKey(rawRepresentation: machineKeyBytes(c.machine_key))
         guard key.isValidSignature(sig, for: Data(signed.utf8)) else { throw invalid }
-        try checkHarnessPlan(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest, action: action)
+        if let launch = action.launchAction {
+            try checkHarnessPlan(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest, action: launch)
+        } else {
+            _ = try reviewHarnessAccounts(c.plan_canonical, planID: c.plan_id, digest: c.plan_digest)
+        }
         return c
     }
 
