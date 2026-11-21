@@ -88,6 +88,30 @@ struct HarnessExportTests {
                     precondition(displayed.contains(expected))
                 }
             }
+            if action == .serviceUpgrade {
+                let displayed = try action.review(request.plan_canonical, planID: request.plan_id, digest: request.plan_digest)
+                for expected in ["Previous applied plan: plan-20261120T120000Z-abcd",
+                                 "Previous plan SHA-256: " + String(repeating: "a", count: 64),
+                                 "Previous release: /private/tmp/hq-recovery-fixture/hq",
+                                 "Next release: /private/tmp/hq-upgrade-fixture/hq",
+                                 "Previous LaunchDaemon plist", "Next LaunchDaemon plist",
+                                 "Pinned Node: /private/tmp/hq-recovery-fixture/node"] {
+                    precondition(displayed.contains(expected))
+                }
+                func refuses(_ source: String) {
+                    let digest = SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
+                    precondition((try? reviewHQServiceUpgrade(source, planID: planID, digest: digest)) == nil)
+                }
+                for (old, replacement) in [("plan-20261120T120000Z-abcd", planID),
+                                           (String(repeating: "a", count: 64), String(repeating: "g", count: 64)),
+                                           ("hq-upgrade-fixture/hq", "hq-recovery-fixture/hq"),
+                                           (#""action":"upgrade""#, #""action":"write""#),
+                                           ("owner UID 501", "owner UID 502")] {
+                    let changed = canonical.replacingOccurrences(of: old, with: replacement)
+                    precondition(changed != canonical)
+                    refuses(changed)
+                }
+            }
             precondition((try? request.checkOwnerKey(Data(repeating: 0, count:65))) == nil)
             let expected = ["agent-bot-machine-owner/v1",name,machineHex,String(repeating:"45",count:32),
                 ownerPin,planID,digest,String(repeating:"12",count:32),String(now+120),""].joined(separator:"\n")
