@@ -355,9 +355,12 @@ export async function keydStatus({ env = process.env, home = homedir(), request 
 
 // What the owner does about a keyd that is not the pinned version (#767).
 export function keydVersionAction(status) {
-  return status.version === null
-    ? 'it did not report a version; update the app that ships keyd'
-    : `update the app that ships keyd to one bundling ${status.expectedVersion}, or run: agent-bot keyd install --bin PATH with a ${status.expectedVersion} build`;
+  const update = `update the host that supplies keyd to a release bundling ${status.expectedVersion}`;
+  const machine = 'For a Machine-managed installation, the Homebrew prefix owner can run brew upgrade true-line/agent-bot-machine/managed-machine once that formula ships the required version.';
+  const manual = status.bin && status.version !== null
+    ? ' For an independently managed Identity installation, run agent-bot keyd install --bin PATH with the matching build.'
+    : '';
+  return `${status.version === null ? 'it did not report a version. ' : ''}${update}. ${machine}${manual}`;
 }
 
 // Supervising keyd under launchd (`agent-bot keyd install|uninstall|status`)

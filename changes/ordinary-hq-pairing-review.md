@@ -1,0 +1,1 @@
+- The macOS pairing prompt shows the selected ordinary-account HQ UID and binds it to the signed approval. Dedicated HQ pairing keeps its existing approval format (#1464).

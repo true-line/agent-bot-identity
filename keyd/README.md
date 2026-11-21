@@ -34,8 +34,9 @@ Team ID and identifier for a signed build. Any other reader, including
 instead of a silent read. keyd turns keychain prompts off in its own process,
 so a call it is not entitled to fails rather than waiting on a dialog nobody is
 watching; that flag is process-wide and changes nothing for any other process.
-Another process cannot widen an item's access list either. A keyd update signed
-by the same team keeps access. keyd never returns a key over any channel.
+Another process cannot widen an item's access list either. A signed keyd update keeps access when its complete designated requirement
+matches the requirement stored in the item, including when the old executable
+has been removed. keyd never returns a key over any channel.
 
 Leaving an item to the framework's default access is not enough, and keyd used
 to: that default trusts *any* application to write the value, so any process

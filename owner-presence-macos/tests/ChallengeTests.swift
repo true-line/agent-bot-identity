@@ -20,6 +20,17 @@ struct ChallengeTests {
             return try FirstHQChallenge.parse(JSONSerialization.data(withJSONObject: envelope), now: 1000)
         }
         let original = firstHQ.plan_canonical
+        precondition(firstHQ.approvalReason.hasPrefix("Provision the first HQ account?\n"))
+        // The native consent message must identify the optional system service as well as the account.
+        for (action, change) in [("create", "install"), ("write", "update")] {
+            let step = #",{"kind":"service","target":"ai.true-line.agent-bot-hq","action":""# + action
+                + #"","owner":"operator","content":"fixture","detail":"apply the verified release"}"#
+            precondition(original.hasSuffix("]}\n"))
+            let combined = try parseFirst(String(original.dropLast(3)) + step + "]}\n")
+            precondition(combined.approvalReason.hasPrefix("Create the first HQ account and " + change + " the HQ LaunchDaemon?\n"))
+            precondition(combined.approvalReason.contains(combined.plan_digest))
+            precondition(combined.signedBytes != firstHQ.signedBytes)
+        }
         for text in [original + " ", original.replacingOccurrences(of: #""members":[]"#, with: #""members":null"#),
                      original.replacingOccurrences(of: #""version":3"#, with: #""version":3,"version":3"#),
                      original.replacingOccurrences(of: #""action":"create""#, with: #""action":"repair""#)] {
@@ -35,6 +46,23 @@ struct ChallengeTests {
         }
         let challenge = try parse(fields)
         precondition(challenge.signedBytes == Data("agent-bot-machine-owner/v1\nmachine-pair\n\(machine)\n\(hq)\n\(nonce)\n1120\n".utf8))
+        var ordinary = fields
+        ordinary["action"] = "machine-pair-ordinary"
+        precondition((try? parse(ordinary)) == nil)
+        for invalidUID: Any in [0, 500, -1, Int(Int32.max) + 1, true, "503", NSNull()] {
+            ordinary["hq_uid"] = invalidUID
+            precondition((try? parse(ordinary)) == nil)
+        }
+        ordinary["hq_uid"] = 503
+        let ordinaryChallenge = try parse(ordinary)
+        let ordinaryMessage = ["agent-bot-machine-owner/v1", "machine-pair-ordinary", machine, hq, "503", nonce, "1120", ""]
+        precondition(ordinaryChallenge.signedBytes == Data(ordinaryMessage.joined(separator: "\n").utf8))
+        precondition(ordinaryChallenge.approvalReason.contains("ordinary account UID 503"))
+        ordinary["hq_uid"] = 504
+        let differentAccount = try parse(ordinary)
+        precondition(differentAccount.signedBytes != ordinaryChallenge.signedBytes)
+        ordinary["action"] = "machine-pair"
+        precondition((try? parse(ordinary)) == nil)
         // Node's independent P-256 vector is also verified by Machine's Go enrollment test.
         let publicPoint = Data(base64Encoded: "BDjokZqqPh39fjipw1EC8xKwi2eosj6MFX94A/HdkRdd2T+vOg0UHeB+zx+8J+4aaQx1Xc/Eyc9n5sv8v4DkpXs=")!
         let der = Data(base64Encoded: "MEUCIQCgF9p55vCHM/OCmK8eNuA+0qKayEt2UTewnTV/xmoq3AIgRWwv4nM/Ae+pfNtz2shgRQtSGnt1liS+tHmIJYMJPn0=")!

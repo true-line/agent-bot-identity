@@ -1,0 +1,1 @@
+- On macOS, the owner CLI can approve installation or retirement of a paired harness launch rule. It shows the target accounts, executable arguments and file changes before asking the enrolled owner to sign, and stays open until authentication and proof delivery finish (#1472).

@@ -1,2 +1,4 @@
 RELEASE_COMMIT export-subst
 tests/golden/** text eol=lf
+tools/private-pilot export-ignore
+tests/private-pilot-machine-owner.test.mjs export-ignore

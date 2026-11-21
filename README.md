@@ -904,26 +904,41 @@ On protected macOS, Machine holds host credentials in the admin account.
 HQ pairs from its own account. The daily user's account approves the exact
 HQ and Machine keys with Touch ID or the login password.
 
-Machine owner operations require an authorized unbundled provider in the
-signed-in owner's session. This Identity version has no authorized provider.
-Continue using any existing pairing and keep the owner public key pinned in
-Machine. New owner approvals must wait for a compatible provider.
+For a Mac with no previous pairing, the administrator installs the signed
+owner CLI from authenticated release bytes. From a reviewed, administrator-controlled checkout, use
+`sudo /usr/bin/ruby --disable-gems owner-presence-macos/install.rb SIGNED_EXECUTABLE APPROVED_TEAM APPROVED_SHA256`.
+Obtain the team and SHA-256 independently from the approved release record.
+In the daily owner’s Terminal, `id -u` gives that account’s UID. After checking
+that the Mac has no prior or archived enrollment, the administrator runs
+`sudo /Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence authorize-first-enrollment UID --no-prior-enrollment`.
+This gives the selected account a five-minute first-enrollment permit.
+With the organization's approved Developer ID team configured in
+`settings.keydTeamId`, the daily owner runs `agent-bot machine init-owner-key`
+in their login session. A daily account that has not loaded the organization
+profile can use the fixed executable directly as shown in the
+[first-enrollment procedure](owner-presence-macos/FIRST-ENROLLMENT.md).
+The CLI creates a non-exportable Secure Enclave P-256 key. Its
+device-bound reference is stored in the owner's login Keychain with access
+restricted to the signed executable. The command returns only the public key.
+If the permit expires or initialization stops before a key exists, the same
+administrator can repeat the history checks using `retry-first-enrollment`
+with the same UID and declaration. Read an already-created key with
+`owner-public-key`.
 
-- `agent-bot machine owner-public-key` requires independent access to the
-  owner's existing Secure Enclave P-256 public key.
-- `agent-bot machine approve-pairing < challenge.json` requires fresh local
-  consent for the exact pairing challenge and signs its purpose-specific
-  transcript with the corresponding nonexportable owner key.
-- `agent-bot machine review-first-hq FILE` opens the local one-time review
-  before the daily daemon or HQ has been paired. Compare the Machine
-  fingerprint with the one supplied independently by the administrator,
-  then check the plan digest, steps and any LaunchDaemon content. A public
-  proof also requires the protected owner operation. Closing the page,
-  discarding the review or reaching expiry ends the session.
+The prefix administrator independently verifies the public key and pins it
+with `managed-machine daemon pair --pin-owner KEY`. To read the same public
+key again, use `agent-bot machine owner-public-key`. An older owner key or
+pairing requires its own continuity procedure. Keep the existing pin. To remove
+the installed owner helper, follow [Remove the owner CLI](owner-presence-macos/FIRST-ENROLLMENT.md#remove-the-owner-cli).
 
-Issuing a new key or changing the Machine pin requires a separate owner
-decision. The regular Identity/keyd presence checks serve their existing
-operations.
+- `agent-bot machine review-first-hq FILE` opens the one-time local plan
+  review. Compare the Machine fingerprint with the administrator's independent
+  copy and inspect the plan, including the LaunchDaemon when present. Confirm
+  the exact action with Touch ID or the login password. Closing the page,
+  discarding the plan or reaching expiry ends the session.
+- `agent-bot machine approve-pairing < challenge.json` requests fresh consent
+  to sign the exact HQ and Machine pairing transcript. Return the public proof
+  to Machine for verification against the pinned owner key.
 
 For existing account-local setups, the owner pairs
 this account's agent-daemon with it once: `agent-bot pair` (`agent-bot machine pair`, owner

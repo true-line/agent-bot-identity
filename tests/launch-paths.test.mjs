@@ -10,7 +10,7 @@
 // launch here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.join(import.meta.dirname, '..');
@@ -59,6 +59,7 @@ const LAUNCH_PATHS = {
   'keyd-supervisor.mjs': [1, 'OS tool: launchctl'],
   'identity/owner-approval.mjs': [1, 'OS tool: osascript'],
   'machine-first-hq-review.mjs': [1, 'owner-run: open the one-time loopback review in the default browser via /usr/bin/open'],
+  'identity/machine-owner-presence.mjs': [3, 'macOS: fixed system codesign and fixed installed Machine owner CLI, with a bounded command set and clean environment'],
   'identity/owner-presence.mjs': [2, 'OS tool: codesign, then the verified keyd binary'],
   'detect-harness.mjs': [3, 'OS tool: ps and codesign'],
   'process-ownership.mjs': [1, 'OS tool: ps'],
@@ -92,6 +93,12 @@ const LAUNCH_PATHS = {
   'scripts/windows-supervisor-acceptance.mjs': [1, 'owner-run disposable native acceptance: real OS task tools and staged first-party engines only'],
   'scripts/linux-bundle/build.mjs': [2, 'build tooling'],
 };
+
+// This operator-selected helper is excluded from source release archives.
+const pilot = 'tools/private-pilot/machine-owner.mjs';
+if (existsSync(path.join(root, pilot))) {
+  LAUNCH_PATHS[pilot] = [2, 'private pilot: fixed macOS signature checks and the verified installed owner helper'];
+}
 
 function runtimeModules(dir = root, prefix = '') {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
