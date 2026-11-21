@@ -10,13 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       purpose:
-        description: Why the complete suite is being run manually
+        description: Manual PR-head preflight or diagnostics; source releases require the main push run
         required: true
         type: choice
         options:
           - exact-sha-preflight
           - diagnostics
-          - release-recovery
           - workflow-testing
           - explicit-rerun
 
