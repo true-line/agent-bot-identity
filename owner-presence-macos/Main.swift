@@ -96,9 +96,15 @@ enum OwnerPresenceMain {
         try FileHandle.standardOutput.write(contentsOf: data)
     }
 
-    static func main() async {
-        do { try await run(Array(CommandLine.arguments.dropFirst())) }
-        catch {
+    @MainActor static func main() {
+        runOwnerCommand { await commandStatus() }
+    }
+
+    private static func commandStatus() async -> Int32 {
+        do {
+            try await run(Array(CommandLine.arguments.dropFirst()))
+            return EXIT_SUCCESS
+        } catch {
             // Native errors may include account, Keychain or signing metadata.
             // Expose only our own fixed, public diagnostics.
             let message = (error as? PresenceFailure)?.errorDescription
@@ -109,7 +115,7 @@ enum OwnerPresenceMain {
             FileHandle.standardError.write(Data((message + "\n").utf8))
             // EX_UNAVAILABLE distinguishes an unusable provider or credential
             // from a rejected challenge or an owner's decision.
-            exit(error is PresenceFailure ? 1 : EX_UNAVAILABLE)
+            return error is PresenceFailure ? 1 : EX_UNAVAILABLE
         }
     }
 }
