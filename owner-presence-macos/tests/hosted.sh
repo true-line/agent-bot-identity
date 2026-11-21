@@ -4,7 +4,7 @@ src=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 /usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
-    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" "$src/tests/ChallengeTests.swift" -o "$dir/challenge-tests"
+    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" "$src/tests/ChallengeTests.swift" -o "$dir/challenge-tests"
 "$dir/challenge-tests" "$src/../tests/fixtures/first-hq-challenge.json"
 
 /usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
@@ -13,12 +13,12 @@ trap 'rm -rf "$dir"' EXIT
 
 target="$(/usr/bin/uname -m)-apple-macosx15.0"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library \
-    "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessLaunchChallenge.swift" \
+    "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" \
     "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/tests/HarnessOwnerBoundaryTests.swift" -o "$dir/harness-boundary"
 "$dir/harness-boundary" "$src/../tests/fixtures"
 /usr/bin/xcrun --sdk macosx clang -target "$target" -Wno-deprecated-declarations -c "$src/TrustedApplication.c" -o "$dir/trusted.o"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library -D FRESH_OWNER_STORE_TESTS \
-    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" \
+    "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/OwnerKey.swift" \
     "$src/FreshOwnerStore.swift" "$src/tests/FreshOwnerStoreTests.swift" "$dir/trusted.o" -o "$dir/store-tests"
 "$dir/store-tests"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library \

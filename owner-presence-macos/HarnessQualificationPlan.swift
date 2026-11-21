@@ -191,16 +191,32 @@ private struct QualificationRequest: Decodable {
 
 let maximumQualificationPlanBytes = 28 * 1024
 
-func reviewHarnessQualification(_ data: Data, planID: String, digest: String) throws -> String {
+enum HarnessQualificationReviewMode {
+    case preview
+    case approval
+
+    func allows(_ detail: String) -> Bool {
+        detail == qualificationApprovalDetail || (self == .preview && detail == qualificationPreviewDetail)
+    }
+
+    var title: String {
+        self == .approval ? "Harness qualification run approval" : "Harness qualification plan preview"
+    }
+}
+
+private let qualificationPreviewDetail = "Review only: declared host identity, fixed conformance gates, pinned runner and test provider, disposable member state; no install or launch authorization."
+let qualificationApprovalDetail = "Owner approval permits one qualification run with the listed runner, test provider and disposable member state. It grants no installation or ordinary HQ access."
+
+func reviewHarnessQualification(_ data: Data, planID: String, digest: String,
+                                mode: HarnessQualificationReviewMode = .preview) throws -> String {
     let invalid = PresenceFailure.invalidChallenge
     guard data.count <= maximumQualificationPlanBytes, matchesHarnessField(planID, "plan-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}"),
           SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == digest
     else { throw invalid }
     let p = try JSONDecoder().decode(QualificationPlan.self, from: data)
-    let detail = "Review only: declared host identity, fixed conformance gates, pinned runner and test provider, disposable member state; no install or launch authorization."
     guard p.version == 3, p.hq_account == "_agent-bot-hq", p.dir == "/Library/Application Support/ai.true-line.agent-bot-hq/ipc",
           p.members.isEmpty, p.steps.count == 1, p.purpose == "harness-qualification-run",
-          let step = p.steps.first, step.kind == "qualification-run", step.action == "none", step.detail == detail
+          let step = p.steps.first, step.kind == "qualification-run", step.action == "none", mode.allows(step.detail)
     else { throw invalid }
     let run = try JSONDecoder().decode(QualificationRun.self, from: Data(step.content.utf8))
     let r = run.request, launch = r.adapter.launch
@@ -221,7 +237,7 @@ func reviewHarnessQualification(_ data: Data, planID: String, digest: String) th
 
     func display(_ text: String) throws -> String { try visibleHarnessText(quote(text)) }
     var lines = try [
-        "Harness qualification plan preview",
+        mode.title,
         "Plan: " + planID, "Plan SHA-256: " + digest, "Original request SHA-256: " + run.request_sha256,
         "Candidate adapter: " + display(r.adapter.id) + "  Version: " + display(r.adapter.version),
         r.adapter.package.summary("Package"),
@@ -236,7 +252,7 @@ func reviewHarnessQualification(_ data: Data, planID: String, digest: String) th
         r.runner.file.summary("Runner binary"),
         "Test provider: " + display(r.test_provider.id),
         r.test_provider.file.summary("Test provider configuration"),
-        "Member state: disposable", "One use: yes", detail,
+        "Member state: disposable", "One use: yes", step.detail,
     ]
     for (i, arg) in ([launch.executable] + launch.argv).enumerated() {
         lines.append(try "argv[\(i)] " + display(arg))

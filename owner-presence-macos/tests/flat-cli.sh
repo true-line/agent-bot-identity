@@ -16,7 +16,7 @@ test ! -s "$dir/completion"
 
 sh "$src/build.sh" "$dir/provider"
 /usr/bin/xcrun --sdk macosx swiftc -target "$(/usr/bin/uname -m)-apple-macosx15.0" -swift-version 5 -parse-as-library \
-    "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" \
+    "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" \
     "$src/tests/HarnessExportTests.swift" -o "$dir/export-tests"
 "$dir/export-tests" "$src/../tests/fixtures" "$dir/provider"
 refused() {

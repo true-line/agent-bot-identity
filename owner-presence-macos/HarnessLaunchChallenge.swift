@@ -6,6 +6,7 @@ enum PairedHarnessPurpose: String, CaseIterable {
     case retire = "harness-launch-retire"
     case provision = "harness-account-provision"
     case serviceRecovery = "hq-service-recovery"
+    case qualification = "harness-qualification-run"
 
     var confirmationPrompt: String {
         switch self {
@@ -13,6 +14,7 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .retire: return "Retire the reviewed harness launch rule?"
         case .provision: return "Provision the reviewed harness accounts?"
         case .serviceRecovery: return "Repair the paired HQ service?"
+        case .qualification: return "Approve one reviewed harness qualification run?"
         }
     }
 
@@ -22,6 +24,8 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .retire: return try renderHarnessReview(source, planID: planID, digest: digest, action: .retire)
         case .provision: return try reviewHarnessAccounts(source, planID: planID, digest: digest)
         case .serviceRecovery: return try reviewHQServiceRecovery(source, planID: planID, digest: digest)
+        case .qualification:
+            return try reviewHarnessQualification(Data(source.utf8), planID: planID, digest: digest, mode: .approval)
         }
     }
 }
