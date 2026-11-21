@@ -145,6 +145,25 @@ umask 077
 
 The review shows the existing dedicated HQ account, the service action, the owner and UID, the archive and Node paths and digests, any runtime directory change and the complete LaunchDaemon configuration. After reviewing those effects and authenticating, return the successful proof through the paired HQ's `machine hq-service-recovery approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. Machine checks the current pairing and the stopped service before accepting the proof. The administrator applies the approved plan separately.
 
+## Approve a paired HQ service upgrade
+
+Use the existing owner key and installed Machine pin. The paired HQ exports
+`machine hq-service-upgrade export PLAN_ID --socket SOCKET`. Transfer the
+original signed response line to the owner account and run:
+
+```sh
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  approve-hq-service-upgrade < challenge.json > owner-proof.json
+```
+
+The review displays the previous applied plan ID and digest, both release
+archives and digests, the pinned Node executable and digest, and both complete
+LaunchDaemon plists. Return the proof through the paired HQ's
+`machine hq-service-upgrade approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`.
+Machine consumes the one-use challenge and checks the previous root receipt
+before the administrator separately applies the saved plan. A recovery proof
+cannot approve an upgrade.
+
 ## Approve a paired qualification run
 
 Have the dedicated HQ export the exact approval plan using
