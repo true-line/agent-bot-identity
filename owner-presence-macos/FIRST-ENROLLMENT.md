@@ -112,3 +112,16 @@ umask 077
 ```
 
 Review each harness account, its numeric UID, private group and GID, its home and mode, and any broker directories. Check whether Machine will create an account, repair its home mode, or verify an existing role. After confirmation and fresh owner authentication, return the proof via the dedicated HQ's `machine harness-account-provision approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. The administrator separately applies the approved plan. Installing or retiring a launch rule requires a separate approval.
+
+## Review a stopped HQ service repair
+
+The paired HQ exports the saved plan with `machine hq-service-recovery export PLAN_ID --socket SOCKET`.
+Transfer the complete signed response to the enrolled owner's desktop session. Use a fresh output file for each challenge.
+
+```sh
+umask 077
+/Library/PrivilegedHelperTools/ai.true-line.agent-bot-owner-presence \
+  approve-hq-service-recovery < challenge.json > owner-proof.json
+```
+
+The review shows the existing dedicated HQ account, the service action, the owner and UID, the archive and Node paths and digests, any runtime directory change and the complete LaunchDaemon configuration. After reviewing those effects and authenticating, return the successful proof through the paired HQ's `machine hq-service-recovery approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. Machine checks the current pairing and the stopped service before accepting the proof. The administrator applies the approved plan separately.

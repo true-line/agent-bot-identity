@@ -7,12 +7,7 @@ import SystemConfiguration
 enum HarnessNativeReview {
     static func text(_ challenge: HarnessLaunchChallenge) throws -> String {
         guard let purpose = PairedHarnessPurpose(rawValue: challenge.action) else { throw PresenceFailure.invalidChallenge }
-        let details: String
-        if let launch = purpose.launchAction {
-            details = try renderHarnessReview(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest, action: launch)
-        } else {
-            details = try reviewHarnessAccounts(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest)
-        }
+        let details = try purpose.review(challenge.plan_canonical, planID: challenge.plan_id, digest: challenge.plan_digest)
         return ["Machine SHA-256: " + machineFingerprint(challenge.machine_key),
                 "HQ SHA-256: " + machineFingerprint(challenge.hq_key),
                 "Expires (Unix seconds): " + String(challenge.expires_at), details].joined(separator: "\n")
