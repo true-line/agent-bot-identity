@@ -50,6 +50,7 @@ refused "$invalid" preview-harness-launch install "$retire_id" "$retire_digest" 
 { printf '\357\273\277'; cat "$fixtures/harness-launch-install.json"; } |
   refused "$invalid" preview-harness-launch install "$install_id" "$install_digest"
 dd if=/dev/zero bs=32769 count=1 2>/dev/null | refused "$invalid" preview-harness-launch install "$install_id" "$install_digest"
+/usr/bin/python3 -IB "$src/tests/qualification-preview.py" "$dir/provider" "$fixtures/harness-qualification-run.json"
 refused "$invalid" approve-harness-launch-install < "$fixtures/harness-launch-install.json"
 refused "$invalid" approve-harness-launch-retire < "$fixtures/harness-launch-retire.json"
 refused "$invalid" sign < /dev/null

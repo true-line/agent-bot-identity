@@ -57,6 +57,15 @@ enum OwnerPresenceMain {
             try FileHandle.standardOutput.write(contentsOf: Data((preview + "\n").utf8))
             return
         }
+        if args.first == "preview-harness-qualification" {
+            guard args.count == 3 else { throw PresenceFailure.invalidChallenge }
+            let data = try readInput(limit: maximumQualificationPlanBytes)
+            let preview: String
+            do { preview = try reviewHarnessQualification(data, planID: args[1], digest: args[2]) }
+            catch { throw PresenceFailure.invalidChallenge }
+            try FileHandle.standardOutput.write(contentsOf: Data((preview + "\n").utf8))
+            return
+        }
         if args.first == "authorize-first-enrollment" || args.first == "retry-first-enrollment" {
             guard args.count == 3, args[2] == "--no-prior-enrollment",
                   let uid = uid_t(args[1]), uid > 0, String(uid) == args[1]
