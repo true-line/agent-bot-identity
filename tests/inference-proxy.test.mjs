@@ -6,6 +6,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -185,17 +186,21 @@ test('request receipts cover key-not-held, too-large and upstream-unreachable (#
   } finally { await p.close(); }
 });
 
-test('a soul whose baseUrl is on the proxy gets a proxy token, never the key, receipted as brokered-inference', async () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'inference-proxy-'));
-  roots.push(root);
-  const env = { AGENT_BOT_INTERACTION_HOME: path.join(root, 'interaction'), AGENT_BOT_CONFIG: path.join(root, 'none.json'), AGENT_BOT_SERVER_STATE: path.join(root, 'server') };
-  dropProviderKey();
+async function holdFixtureKey(env, root) {
   const session = Object.create(ServerSession.prototype);
   session.call = async (method, route) => {
     const q = new URL(route, 'https://x.test').searchParams;
     return { provider: 'openai', key: KEY, key_id: 'pk_1', expires_at: '2099-01-01T00:00:00Z', issuance_id: 'iss_pk1', operation_id: q.get('operation_id'), task_id: 'daemon-start' };
   };
   await fetchProviderKey({ provider: 'openai', env, home: root, session });
+}
+
+test('a soul whose baseUrl is on the proxy gets a proxy token, never the key, receipted as brokered-inference', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'inference-proxy-'));
+  roots.push(root);
+  const env = { AGENT_BOT_INTERACTION_HOME: path.join(root, 'interaction'), AGENT_BOT_CONFIG: path.join(root, 'none.json'), AGENT_BOT_SERVER_STATE: path.join(root, 'server') };
+  dropProviderKey();
+  await holdFixtureKey(env, root);
   const origin = await startInferenceProxy({ port: 0, upstreams: { openai: 'https://opencode.ai/zen/go/v1' } });
   assert.equal(brokeredProviderEnv({ providerId: 'openai', envKey: 'OPENAI_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1', env, home: root }), null, 'a baseUrl off the proxy is not brokered');
   const patch = brokeredProviderEnv({ providerId: 'openai', envKey: 'OPENAI_API_KEY', baseUrl: `${origin}/v0/inference/openai`, agentId: null, harness: 'opencode', env, home: root });
@@ -210,6 +215,73 @@ test('a soul whose baseUrl is on the proxy gets a proxy token, never the key, re
   const res = await fetch(`${origin}/v0/inference/openai/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${patch.env.OPENAI_API_KEY}` }, body: '{}' });
   assert.equal(res.status, 401);
   await stopInferenceProxy();
+});
+
+test('the launch proxy token forwards the catalog and the first response event before the provider finishes', async () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'inference-stream-'));
+  roots.push(home);
+  const env = { AGENT_BOT_INTERACTION_HOME: path.join(home, 'interaction'), AGENT_BOT_CONFIG: path.join(home, 'none.json'), AGENT_BOT_SERVER_STATE: path.join(home, 'server') };
+  const upstream = 'https://provider.example/v1';
+  const model = `local-stream-${randomUUID()}`;
+  const first = 'data: {"type":"response.output_text.delta","delta":"hello"}\n\n';
+  const terminal = 'data: {"type":"response.completed","response":{"usage":{"output_tokens":1}}}\n\n';
+  let release;
+  const clientSawFirst = new Promise(resolve => { release = resolve; });
+  const fetchImpl = async (url, init) => {
+    assert.equal(init.headers.authorization, `Bearer ${KEY}`);
+    if (String(url) === `${upstream}/models` && init.method === 'GET') {
+      return Response.json({ data: [{ id: model }] });
+    }
+    assert.equal(String(url), `${upstream}/responses`);
+    assert.equal(init.method, 'POST');
+    assert.deepEqual(JSON.parse(init.body), { model, stream: true });
+    return new Response(new ReadableStream({
+      async start(controller) {
+        controller.enqueue(Buffer.from(first));
+        await clientSawFirst;
+        controller.enqueue(Buffer.from(terminal));
+        controller.close();
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } });
+  };
+  dropProviderKey();
+  try {
+    await holdFixtureKey(env, home);
+    const origin = await startInferenceProxy({ port: 0, upstreams: { openai: upstream }, env, home, fetchImpl });
+    const port = Number(new URL(origin).port);
+    const baseUrl = proxyBaseUrl(port, 'openai');
+    const launch = launchProviderEnv({ providerId: 'openai', envKey: 'OPENAI_API_KEY', baseUrl, proxyPort: port, agentId: 'agent_11111111-1111-4111-8111-111111111111', env, home });
+    const headers = { authorization: `Bearer ${launch.env.OPENAI_API_KEY}`, 'content-type': 'application/json' };
+    const signal = AbortSignal.timeout(5000);
+    const catalog = await fetch(`${baseUrl}/models`, { headers, signal });
+    assert.equal(catalog.status, 200);
+    const { data } = await catalog.json();
+    assert.deepEqual(data, [{ id: model }]);
+    const res = await fetch(`${baseUrl}/responses`, { method: 'POST', headers, signal, body: JSON.stringify({ model: data[0].id, stream: true }) });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/event-stream');
+    const chunks = res.body.pipeThrough(new TextDecoderStream())[Symbol.asyncIterator]();
+    let received = '';
+    while (received.length < first.length) {
+      const { done, value } = await chunks.next();
+      assert.equal(done, false, 'the stream ended before the first event');
+      received += value;
+    }
+    assert.equal(received, first);
+    release();
+    let rest = '';
+    for await (const chunk of chunks) rest += chunk;
+    assert.equal(rest, terminal);
+    const rows = readFileSync(path.join(env.AGENT_BOT_INTERACTION_HOME, 'audit.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const forwarded = rows.filter(row => row.event === 'provider-key-use' && row.detail.includes(' -> '));
+    assert.deepEqual(forwarded.map(row => [row.detail, row.taskId]), [
+      ['GET /v1/models -> 200', 'daemon-start'], ['POST /v1/responses -> 200', 'daemon-start'],
+    ]);
+  } finally {
+    release();
+    await stopInferenceProxy();
+    dropProviderKey();
+  }
 });
 
 test('brokering fails closed: with the proxy down and the key held, a soul whose baseUrl is on the proxy is refused and its env never gets the key', async () => {
