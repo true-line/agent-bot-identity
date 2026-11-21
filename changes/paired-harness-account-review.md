@@ -1,0 +1,1 @@
+- The macOS owner CLI can review a paired Machine plan to create agent accounts. It shows each account, private group, home and any requested broker directories before asking for owner authentication (#1473).
