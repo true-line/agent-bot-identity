@@ -363,12 +363,49 @@ detect_foreign_pair() {
   done
 
   if command -v "$(ps_cmd)" > /dev/null 2>&1; then
-    "$(ps_cmd)" -eo pid=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
-    grep -E 'daemon run|agent-comms[^ ]*[ /]broker|agent-comms-broker' "$SCRATCH/ps" \
-      > "$SCRATCH/matches" 2>/dev/null || : > "$SCRATCH/matches"
-    # Drop this probe's own grep and anything inside this install's prefix.
-    grep -vF "$SCRATCH" "$SCRATCH/matches" 2>/dev/null | grep -vF "$PREFIX/" > "$SCRATCH/foreign" \
-      2>/dev/null || : > "$SCRATCH/foreign"
+    # Both procps and BSD ps select the effective UID with -u. Keep the
+    # kernel command separately: args alone can contain examples in arbitrary
+    # commands. -ww preserves long paths in the release and in the node runtime.
+    "$(ps_cmd)" -ww -u "$(id -u)" -o pid=,ucomm=,args= > "$SCRATCH/ps" 2>/dev/null || : > "$SCRATCH/ps"
+    awk -v prefix="$PREFIX/" '
+      BEGIN {
+        space = "[[:space:]]+"
+        # Each service entry must be followed immediately by its own operation.
+        entry_op = "(^|/)(agent-bot([.]mjs)?" space "(daemon|broker)|agent-comms([.]mjs)?" space "broker|agent-daemon[.]mjs|agent-comms-broker)" space "run([[:space:]]|$)"
+      }
+      {
+        pid = $1; comm = $2
+        if (pid !~ /^[0-9]+$/ || comm !~ /^(agent-bot(\.mjs)?|agent-daemon\.mj[s]?|agent-comms(\.mjs)?|agent-comms-bro(k(er?)?)?|node(js)?|sh|dash|bash|zsh)$/) next
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+/, "")
+        args = $0
+        # The launcher may have execed Node, or a shell may still be running
+        # the wrapper. Strip just that executable, including a path with spaces.
+        if (match($0, /(^|\/)(node(js)?|sh|dash|bash|zsh)[[:space:]]+/)) {
+          runtime = substr($0, 1, RSTART + RLENGTH - 1)
+          sub(/[[:space:]]+$/, "", runtime)
+          if (runtime ~ /[[:space:]]+(\/|\.\.?\/)/) next
+          $0 = substr($0, RSTART + RLENGTH)
+          if (runtime ~ /(^|\/)node(js)?$/) {
+            # These Node options take no arguments and still run the entry.
+            sub(/^((--no-warnings|--enable-source-maps|--trace-warnings)[[:space:]]+)+/, "")
+            sub(/^--[[:space:]]+/, "")
+          }
+        }
+        if ($0 ~ /^-/) next
+        if (match($0, entry_op)) {
+          # Keep the path up through the matched entry name. A directory can
+          # itself contain words such as "run" separated by spaces.
+          entry = substr($0, 1, RSTART - 1)
+          name = substr($0, RSTART, RLENGTH)
+          sub(/[[:space:]].*$/, "", name)
+          entry = entry name
+        } else if ($0 ~ /(^|\/)(agent-comms-broker|owner-supervised-broker[.]mjs)$/) {
+          entry = $0
+        } else next
+        if (entry ~ /[[:space:]]+(\/|\.\.?\/)/ || index(entry, prefix) == 1) next
+        print pid, args
+      }
+    ' "$SCRATCH/ps" > "$SCRATCH/foreign"
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       add_finding "process ${line%% *} ${line#* }"

@@ -1,0 +1,1 @@
+- Linux bundle setup now checks the installing account's running Identity and comms services. A separate Machine daemon or another account's installation no longer blocks setup.

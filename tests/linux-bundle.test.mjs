@@ -130,8 +130,15 @@ function fakePs(home, lines) {
   mkdirSync(bin, { recursive: true });
   const path = join(bin, 'ps');
   writeFileSync(path, `#!/bin/sh
-cat <<'PROCESSES'
-${lines.join('\n')}
+# Model ps selection and column layout. A request for all users exposes
+# the foreign UID rows, which must never prevent this account's install.
+case "$*" in
+  "-ww -u $(id -u) -o pid=,ucomm=,args=") filter=selected ;;
+  *) filter=all ;;
+esac
+awk -v filter="$filter" 'filter == "selected" && $1 == "other" { next }
+  { sub(/^[^ ]+ /, ""); print }' <<'PROCESSES'
+${lines.map((line) => line.startsWith('other ') ? line : 'self ' + line).join('\n')}
 PROCESSES
 `);
   chmodSync(path, 0o755);
@@ -789,12 +796,52 @@ test('#337: a symlink at a wrapper path is foreign too', () => {
 
 // -------------------------------------------- decision 2: exactly one pair
 
+test('the process probe identifies only this user’s running Identity or comms services', () => {
+  const unrelated = [
+    '7001 managed-machine /opt/homebrew/bin/managed-machine daemon run',
+    '7002 node /opt/node /work/other-agent-bot.mjs daemon run',
+    '7003 sh /bin/sh -c echo /work/agent-bot daemon run',
+    '7004 node /opt/node /work/agent-bot.mjs broker status',
+    '7005 agent-comms /work/agent-comms broker list',
+    '7006 node /opt/node /work/agent-bot.mjs daemon status',
+    'other 7007 node /opt/node /another/agent-bot.mjs daemon run',
+    '7008 node /opt/node /work/tool.mjs /opt/agent-bot.mjs daemon run',
+    '7009 grep grep /opt/agent-bot daemon run',
+    '7010 node node --eval console.log(process.argv) /work/agent-bot.mjs daemon run',
+    '7011 node node --no-warnings /work/tool.mjs /work/agent-bot.mjs daemon run',
+    '7012 node node --no-warnings /work/pilot run 1/agent-bot.mjs daemon status',
+  ];
+  const box = machine('unrelated-processes', { processes: unrelated });
+  try { const result = box.install(); assert.equal(result.status, 0, result.stderr); }
+  finally { box.cleanup(); }
+
+  const related = [
+    '7101 agent-bot /opt/Agent Tools - Stable/bin/agent-bot daemon run',
+    '7102 node /opt/Node Tools/node /opt/Agent Tools - Stable/lib/agent-bot.mjs daemon run',
+    '7103 node node /opt/Agent Tools/lib/agent-daemon.mjs run',
+    '7104 node node /opt/Agent Tools/lib/agent-comms/bin/agent-comms.mjs broker run --single-account',
+    '7105 node node /opt/Agent Tools/lib/agent-bot.mjs broker run --single-account',
+    '7106 sh /bin/sh /opt/Agent Tools - Stable/bin/agent-bot daemon run',
+    '7107 node node /work/pilot run 1/agent-bot.mjs daemon run',
+    '7108 node /opt/Node Tools/node --no-warnings --enable-source-maps /work/pilot run 1/agent-comms.mjs broker run --single-account',
+    '7109 node node /work/test run 2/agent-daemon.mjs run',
+    '7110 node node /work/test run 3/owner-supervised-broker.mjs',
+  ];
+  const other = machine('running-pair', { processes: [...unrelated, ...related] });
+  try {
+    const result = other.install();
+    assert.notEqual(result.status, 0);
+    for (const row of related) assert.match(result.stdout, new RegExp('process ' + row.split(' ')[0] + ' '));
+    assert.doesNotMatch(result.stdout, /process (?:700[0-9]|701[0-2]) /);
+  } finally { other.cleanup(); }
+});
+
 test('#337: another install\u2019s pair is refused, and --migrate takes it over', () => {
   const foreignUnit = '[Unit]\nDescription=homebrew agent-bot daemon\n';
   const box = machine('second-pair', {
     active: 'active',
     enabled: 'enabled',
-    processes: ['4242 /opt/homebrew/libexec/agent-bot daemon run', '4243 /opt/homebrew/bin/agent-comms broker'],
+    processes: ['4242 agent-bot /opt/homebrew/libexec/agent-bot daemon run', '4243 agent-comms /opt/homebrew/bin/agent-comms broker run'],
   });
   try {
     mkdirSync(join(box.home, '.config', 'systemd', 'user'), { recursive: true });
@@ -861,7 +908,7 @@ test('#337: this install\u2019s own running pair is never mistaken for a second 
     // systemctl and ps are per-run, so the second run can be told the truth.
     const running = fakeSystemctl(box.root, { active: 'active', enabled: 'enabled' });
     const runningPs = fakePs(box.root, [
-      `999 ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'node', 'bin', 'node')} ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'lib', 'agent-bot', 'agent-bot.mjs')} daemon run`,
+      `999 node ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'node', 'bin', 'node')} ${join(box.home, '.local', 'share', 'agent-bot', 'bundle', 'lib', 'agent-bot', 'agent-bot.mjs')} daemon run`,
     ]);
     const again = spawnSync('sh', [INSTALL], {
       cwd: box.archive,
