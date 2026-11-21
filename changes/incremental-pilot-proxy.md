@@ -1,0 +1,1 @@
+- Verification now checks that the local pilot inference proxy delivers the first streamed event before the provider returns its final usage event.
