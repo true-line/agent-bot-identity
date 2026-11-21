@@ -95,7 +95,9 @@ The SDK modules are vendored byte-for-byte from the full source commit in
 `identity/vendor/agent-bot-sdk/source.json`, with per-file hashes and LICENSE.
 The signal-capable SDK source is merged PR #139 commit
 `42d6f5110019f4b7d835e139875b89a75230afe1`. Component protocol tests use actual
-SDK sockets with fixture peers; installed acceptance uses real Soul/HQ/comms.
+SDK sockets with fixture peers. The installed test runs the real Soul runtime
+and comms mailbox with HQ at that SDK commit. It injects the notice consumer,
+the released v0.5.0 schemas, a fixture signer and a simulated upstream.
 
 Required positive validation is a separate, never-skipped gate:
 
@@ -113,8 +115,10 @@ ACP server slots or prove every harness forwards member inputs. Deployments
 must configure the genuine offline dependency and verify their command and
 per-harness inheritance; a directory pinned to an older release refuses.
 
-The bounded client implementation is tracked by
-[#1444](https://github.com/true-line/agent-bot-identity/issues/1444). Parent
-[#1441](https://github.com/true-line/agent-bot-identity/issues/1441) and
-[HQ #13](https://github.com/true-line/agent-bot-hq/issues/13) retain their broader
-integration and rollout criteria.
+[Identity #1445](https://github.com/true-line/agent-bot-identity/pull/1445) delivered the
+installed client. The [post-merge CI gate](https://github.com/true-line/agent-bot-identity/actions/runs/43808904199/job/133105989689)
+passed on the [merged source](https://github.com/true-line/agent-bot-identity/blob/843b4433f397d5a3cc746fdc6f9110b6687d9444/tests/integration/hq-inbox-release-gate.test.mjs).
+[HQ #141](https://github.com/true-line/agent-bot-hq/pull/141) verified default-host
+registration. The [HQ #13 closeout](https://github.com/true-line/agent-bot-hq/issues/13#issuecomment-6927251608)
+records provisioning, member-input inheritance and exclusive service custody for
+the declared single-harness Linux cloud pilot.

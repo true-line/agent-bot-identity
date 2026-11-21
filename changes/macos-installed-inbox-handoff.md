@@ -1,0 +1,1 @@
+- Added a native macOS release check that reads an HQ notice through the installed MCP client, verifies the notice is consumed once, and checks that reading the inbox makes no upstream request.
