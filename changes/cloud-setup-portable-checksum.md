@@ -1,0 +1,1 @@
+- Cloud bundle setup verifies the archive checksum on macOS and Linux before installing, including hosts whose SHA-256 tool lacks GNU check flags (#1488).
