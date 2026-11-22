@@ -12,6 +12,70 @@ import {
   repositoryFromRemote,
   runSignedCommit,
 } from '../signed-commit.mjs';
+import { createBlob } from '../signed-commit.mjs';
+
+const helloBlobSha = 'ce013625030ba8dba906f756967f9e9ca394464a';
+const httpError = (status) => Object.assign(new Error(`HTTP ${status}`), { status });
+
+test('signed-commit recovers an HTTP 500 blob creation only after exact SHA and byte read-back', async () => {
+  const calls = [];
+  const content = Buffer.from('hello\n');
+  const api = async (path, method) => {
+    calls.push([path, method ?? 'GET']);
+    if (method === 'POST') throw httpError(500);
+    return { sha: helloBlobSha, size: content.length, encoding: 'base64', content: 'aGVs\nbG8K\n' };
+  };
+  assert.deepEqual(await createBlob(api, 'acme/widgets', content), { sha: helloBlobSha });
+  assert.deepEqual(calls, [
+    ['repos/acme/widgets/git/blobs', 'POST'],
+    [`repos/acme/widgets/git/blobs/${helloBlobSha}`, 'GET'],
+  ]);
+});
+
+test('signed-commit rejects ambiguous blob creation without another write', async () => {
+  const content = Buffer.from('hello\n');
+  for (const found of [
+    { sha: helloBlobSha, size: content.length, encoding: 'base64', content: 'd3Jvbmc=' },
+    { sha: helloBlobSha, size: content.length + 1, encoding: 'base64', content: content.toString('base64') },
+    { sha: '0'.repeat(40), size: content.length, encoding: 'base64', content: content.toString('base64') },
+  ]) {
+    const calls = [];
+    const api = async (path, method) => {
+      calls.push([path, method ?? 'GET']);
+      if (method === 'POST') throw httpError(500);
+      return found;
+    };
+    await assert.rejects(createBlob(api, 'acme/widgets', content), /read-back did not match local bytes/);
+    assert.equal(calls.length, 2);
+  }
+  let lookups = 0;
+  await assert.rejects(createBlob(async (_path, method) => {
+    if (method === 'POST') throw httpError(500);
+    lookups += 1;
+    throw httpError(404);
+  }, 'acme/widgets', content), /exact SHA read-back failed: HTTP 404/);
+  assert.equal(lookups, 1);
+  await assert.rejects(createBlob(async (_path, method) => {
+    if (method === 'POST') throw httpError(422);
+    lookups += 1;
+  }, 'acme/widgets', content), /HTTP 422/);
+  assert.equal(lookups, 1, 'non-500 errors must not trigger a read-back');
+  await assert.rejects(createBlob(async (_path, method) => {
+    if (method === 'POST') throw httpError(500);
+    throw httpError(500);
+  }, 'acme/widgets', content), /exact SHA read-back failed: HTTP 500/);
+});
+
+test('signed-commit checks the returned SHA on a successful blob creation', async () => {
+  const content = Buffer.from('hello\n');
+  const api = async (_path, _method, body) => {
+    assert.equal(body.content, content.toString('base64'));
+    return { sha: helloBlobSha };
+  };
+  assert.equal((await createBlob(api, 'acme/widgets', content)).sha, helloBlobSha);
+  await assert.rejects(createBlob(async () => ({ sha: '0'.repeat(40) }), 'acme/widgets', content),
+    /blob SHA that differs from the local bytes/);
+});
 
 // signed-commit belongs to the github-identity add-on; state it explicitly
 // so these tests never depend on the caller's own config.

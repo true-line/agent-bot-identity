@@ -61,6 +61,8 @@ The command must stop when:
 - the App identity or token cannot be resolved;
 - the remote branch differs from the fetched remote-tracking ref;
 - the remote moves while replay is in progress;
+- a blob create returns HTTP 500 and an exact SHA read-back cannot prove that
+  GitHub stored the same bytes;
 - GitHub returns an unsigned commit;
 - a signed commit's tree differs from the tested local tree.
 
@@ -73,6 +75,10 @@ observe. Never replace this check with a blind forced push.
 If the lease fails, run the recovery command printed by the CLI, revalidate the
 new range, and start again. If the remote update succeeds but the local reset
 fails, follow the printed fetch/reset recovery; do not republish the branch.
+If GitHub returns HTTP 500 while creating a blob, the command reads that exact
+Git blob SHA back with the same bot credential and continues only when its
+size, encoding and bytes match the local file. A missing or mismatched blob
+stops before the branch update. Inspect the remote head before retrying.
 
 After success, verify the PR or commit page shows the App author and GitHub's
 Verified status before reporting completion.
