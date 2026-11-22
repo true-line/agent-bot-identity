@@ -89,8 +89,23 @@ done
 [ -n "$ARCHIVE" ] || die "no agent-bot-$PLATFORM archive in $DIST"
 NAME=$(basename "$ARCHIVE")
 [ -f "$DIST/SHA256SUMS" ] || die "no SHA256SUMS beside $NAME"
-( cd "$DIST" && grep " $NAME\$" SHA256SUMS | sha256sum --check --strict > /dev/null 2>&1 ) \
-  || die "$NAME does not match its SHA256SUMS entry"
+EXPECTED=$(awk -v name="$NAME" '
+  $2 == name {
+    if (NF != 2 || length($1) != 64 || $0 != $1 "  " name || ++count != 1) bad = 1
+    else print $1
+  }
+  END { if (count != 1 || bad) exit 1 }
+' "$DIST/SHA256SUMS") || die "$NAME has no unique strict SHA256SUMS entry"
+case "$EXPECTED" in *[!0123456789abcdef]*|'') die "$NAME has an invalid SHA256SUMS digest" ;; esac
+if command -v shasum > /dev/null 2>&1; then
+  HASH_OUTPUT=$(shasum -a 256 "$ARCHIVE") || die "could not hash $NAME"
+elif command -v sha256sum > /dev/null 2>&1; then
+  HASH_OUTPUT=$(sha256sum "$ARCHIVE") || die "could not hash $NAME"
+else
+  die "no SHA-256 tool is available to verify $NAME"
+fi
+ACTUAL=$(printf '%s\n' "$HASH_OUTPUT" | awk '{ print $1 }')
+[ "$ACTUAL" = "$EXPECTED" ] || die "$NAME does not match its SHA256SUMS entry"
 
 # ---------------------------------------------------------------- install
 mkdir "$WORK/unpacked"

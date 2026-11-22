@@ -110,6 +110,8 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
+      - name: Record complete-suite diagnostic deadline
+        run: echo "AGENT_BOT_CI_DEADLINE_EPOCH=$(( $(date +%s) + 25 * 60 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -117,7 +119,7 @@ jobs:
         with:
           node-version: 20
       - name: Run the repository validation contract
-        run: npm test
+        run: node scripts/ci-test-runner.mjs
       - name: Run installed HQ inbox compatibility acceptance
         run: node --test tests/integration/hq-inbox-release-gate.test.mjs
 
