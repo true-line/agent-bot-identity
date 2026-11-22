@@ -34,7 +34,9 @@ test('preflight evidence is exact-SHA and falls back to the complete suite', () 
   assert.match(ci, /\.display_title == "CI purpose=exact-sha-preflight"/);
   assert.match(ci, /needs\.preflight-evidence\.outputs\.validated != 'true'/);
   assert.match(ci, /name: Complete suite/);
-  assert.match(ci, /run: npm test/);
+  assert.match(ci, /name: Record complete-suite diagnostic deadline/);
+  assert.match(ci, /AGENT_BOT_CI_DEADLINE_EPOCH=.*25 \* 60/);
+  assert.match(ci, /run: node scripts\/ci-test-runner\.mjs/);
 });
 
 test('stable CI gate covers manual, PR, and main fallback lanes', () => {
