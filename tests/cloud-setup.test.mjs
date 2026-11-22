@@ -67,10 +67,10 @@ exit 0
   return { dist, home, ps, calls: () => (existsSync(join(home, 'calls.log')) ? readFileSync(join(home, 'calls.log'), 'utf8').trim().split('\n') : []) };
 }
 
-function setup(box, args = []) {
+function setup(box, args = [], extraEnv = {}) {
   return spawnSync('sh', [SETUP, ...args], {
     encoding: 'utf8',
-    env: { PATH: process.env.PATH, HOME: box.home, AGENT_BOT_SETUP_DIST: box.dist, AGENT_BOT_PS: box.ps, TMPDIR: tmpdir() },
+    env: { PATH: process.env.PATH, HOME: box.home, AGENT_BOT_SETUP_DIST: box.dist, AGENT_BOT_PS: box.ps, TMPDIR: tmpdir(), ...extraEnv },
   });
 }
 
@@ -128,6 +128,23 @@ test('a bundle without the cloud command, a checksum mismatch and bad flags are 
   assert.equal(c.status, 1);
   assert.match(c.stderr, /does not match its SHA256SUMS entry/);
   assert.ok(!existsSync(join(corrupt.home, '.local', 'bin', 'agent-bot')), 'nothing is installed from an unverified archive');
+
+  const duplicate = fakeDist(t);
+  const sums = join(duplicate.dist, 'SHA256SUMS');
+  writeFileSync(sums, readFileSync(sums, 'utf8').repeat(2));
+  const d = setup(duplicate);
+  assert.equal(d.status, 1);
+  assert.match(d.stderr, /no unique strict SHA256SUMS entry/);
+  assert.ok(!existsSync(join(duplicate.home, '.local', 'bin', 'agent-bot')), 'a duplicate checksum never installs');
+
+  const failedHash = fakeDist(t);
+  const fakeBin = mkdtempSync(join(tmpdir(), 'cloud-setup-hash-tool-'));
+  t.after(() => rmSync(fakeBin, { recursive: true, force: true }));
+  writeFileSync(join(fakeBin, 'shasum'), `#!/bin/sh\nprintf '${'a'.repeat(64)}  archive.tar.gz\\n'\nexit 7\n`, { mode: 0o755 });
+  const h = setup(failedHash, [], { PATH: `${fakeBin}:${process.env.PATH}` });
+  assert.equal(h.status, 1);
+  assert.match(h.stderr, /could not hash/);
+  assert.ok(!existsSync(join(failedHash.home, '.local', 'bin', 'agent-bot')), 'a failed hash tool never installs');
 
   assert.match(setup(old, ['--version', 'v1', '--from-checkout', '.']).stderr, /cannot be combined/);
   assert.match(setup(old, ['--sideways']).stderr, /unknown option: --sideways/);
