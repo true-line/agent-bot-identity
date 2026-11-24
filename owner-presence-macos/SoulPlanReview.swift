@@ -69,6 +69,34 @@ func reviewSoulPlan(_ source: String, planID: String, digest: String, purpose: P
                 else { throw invalid }
             }
         }
+    case .soulProtectedRetire:
+        role = "retire"
+        payload = "soul_protected_retire"
+        guard dir == "none",
+              Set(plan.keys) == ["version", "hq_account", "dir", "members", "steps", "purpose", payload],
+              steps.count == 1,
+              steps[0]["kind"] as? String == "soul-protected-launch",
+              steps[0]["action"] as? String == "remove",
+              steps[0]["detail"] as? String == "disable exact per-Soul authority and sudo rule after both role UIDs are idle; retain claims, snapshots and receipts",
+              let installation = steps[0]["target"] as? String,
+              matchesHarnessField(installation, "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"),
+              let retire = plan[payload] as? [String: Any],
+              Set(retire.keys) == ["schema", "installed_plan_id", "installed_plan_digest", "installed_plan"],
+              retire["schema"] as? String == "agent-bot-machine/soul-protected-launch-retire/v1",
+              let installedID = retire["installed_plan_id"] as? String,
+              matchesHarnessField(installedID, "plan-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}"),
+              let installedDigest = retire["installed_plan_digest"] as? String,
+              matchesHarnessField(installedDigest, "[0-9a-f]{64}"),
+              let installed = retire["installed_plan"] as? [String: Any],
+              installed["purpose"] as? String == PairedHarnessPurpose.soulProtected.rawValue,
+              let original = installed["soul_protected_launch"] as? [String: Any],
+              let policy = original["policy"] as? [String: Any],
+              let binding = policy["binding"] as? [String: Any],
+              binding["installation_id"] as? String == installation,
+              let runner = policy["runner"] as? [String: Any],
+              let bridge = policy["bridge"] as? [String: Any],
+              Set([runner["account"] as? String, bridge["account"] as? String].compactMap { $0 }) == Set(members)
+        else { throw invalid }
     case .soulProtected, .soulCooperative:
         payload = purpose == .soulProtected ? "soul_protected_launch" : "soul_cooperative_launch"
         role = "launch"

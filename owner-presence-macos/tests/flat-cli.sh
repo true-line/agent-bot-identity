@@ -56,6 +56,7 @@ refused "$invalid" approve-harness-launch-retire < "$fixtures/harness-launch-ret
 refused "$invalid" sign < /dev/null
 refused "$invalid" approve-pairing raw < /dev/null
 refused "$invalid" approve-first-hq < /dev/null
+refused "$invalid" approve-tart-guest < /dev/null
 refused "$invalid" authorize-first-enrollment 0 --no-prior-enrollment < /dev/null
 refused "$invalid" retry-first-enrollment 501 < /dev/null
 dd if=/dev/zero bs=2049 count=1 2>/dev/null | refused "$invalid" approve-pairing

@@ -1,0 +1,1 @@
+- Review a disposable Tart guest's Machine-signed plan with a host-signed, short-lived permit under the installed physical Machine pin, while preserving same-host owner approvals.

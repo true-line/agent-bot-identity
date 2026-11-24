@@ -11,6 +11,7 @@ enum PairedHarnessPurpose: String, CaseIterable {
     case soulRunner = "soul-runner-provision"
     case soulBridge = "soul-bridge-provision"
     case soulProtected = "soul-protected-launch-install"
+    case soulProtectedRetire = "soul-protected-launch-retire"
     case soulCooperative = "soul-cooperative-launch-install"
 
     var confirmationPrompt: String {
@@ -24,6 +25,7 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .soulRunner: return "Provision the reviewed Soul runner account?"
         case .soulBridge: return "Provision the reviewed Soul bridge account and directories?"
         case .soulProtected: return "Install the reviewed protected Soul runtime?"
+        case .soulProtectedRetire: return "Retire the reviewed protected Soul runtime?"
         case .soulCooperative: return "Install the reviewed cooperative Soul launch?"
         }
     }
@@ -37,7 +39,7 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .serviceUpgrade: return try reviewHQServiceUpgrade(source, planID: planID, digest: digest)
         case .qualification:
             return try reviewHarnessQualification(Data(source.utf8), planID: planID, digest: digest, mode: .approval)
-        case .soulRunner, .soulBridge, .soulProtected, .soulCooperative:
+        case .soulRunner, .soulBridge, .soulProtected, .soulProtectedRetire, .soulCooperative:
             return try reviewSoulPlan(source, planID: planID, digest: digest, purpose: self)
         }
     }
