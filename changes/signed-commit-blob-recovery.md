@@ -1,0 +1,1 @@
+- `agent-bot signed-commit` checks the exact Git blob bytes after an ambiguous GitHub 500 before continuing a bot-signed publication (#1487).

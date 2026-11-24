@@ -5,6 +5,7 @@
 // an unexpected push before or during replay fails closed.
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import process from 'node:process';
 import { apiBase, githubHost, isGateEnabled, loadConfig } from '../config.mjs';
@@ -146,6 +147,36 @@ function makeApi({ base, token, fetchImpl }) {
   };
 }
 
+// GitHub can commit a blob even when its create response is HTTP 500. Recover
+// only if a read of the Git object named by the exact local bytes returns
+// those same bytes. A failed or ambiguous read leaves the branch untouched.
+export async function createBlob(api, repo, content) {
+  const sha = createHash('sha1')
+    .update(`blob ${content.length}\0`)
+    .update(content)
+    .digest('hex');
+  const encoded = content.toString('base64');
+  let created;
+  try {
+    created = await api(`repos/${repo}/git/blobs`, 'POST', { content: encoded, encoding: 'base64' });
+  } catch (error) {
+    if (error.status !== 500) throw error;
+    let found;
+    try {
+      found = await api(`repos/${repo}/git/blobs/${sha}`);
+    } catch (lookupError) {
+      throw new Error(`blob POST returned HTTP 500; exact SHA read-back failed: ${lookupError.message}`);
+    }
+    if (found.sha !== sha || found.size !== content.length || found.encoding !== 'base64'
+      || typeof found.content !== 'string' || found.content.replace(/[\r\n]/g, '') !== encoded) {
+      throw new Error('blob POST returned HTTP 500; exact SHA read-back did not match local bytes');
+    }
+    return { sha };
+  }
+  if (created.sha !== sha) throw new Error('GitHub returned a blob SHA that differs from the local bytes');
+  return created;
+}
+
 export async function runSignedCommit(options, {
   cwd = process.cwd(), env = process.env, fetchImpl = fetch, mintImpl = mintForCaller,
   stdout = process.stdout, stderr = process.stderr,
@@ -248,9 +279,7 @@ export async function runSignedCommit(options, {
     for (const entry of entries) {
       if (entry.sha === null) treeEntries.push(entry);
       else {
-        const blob = await api(`repos/${repo}/git/blobs`, 'POST', {
-          content: entry.content.toString('base64'), encoding: 'base64',
-        });
+        const blob = await createBlob(api, repo, entry.content);
         treeEntries.push({ path: entry.path, mode: entry.mode, type: entry.type, sha: blob.sha });
       }
     }
