@@ -8,6 +8,10 @@ enum PairedHarnessPurpose: String, CaseIterable {
     case serviceRecovery = "hq-service-recovery"
     case serviceUpgrade = "hq-service-upgrade"
     case qualification = "harness-qualification-run"
+    case soulRunner = "soul-runner-provision"
+    case soulBridge = "soul-bridge-provision"
+    case soulProtected = "soul-protected-launch-install"
+    case soulCooperative = "soul-cooperative-launch-install"
 
     var confirmationPrompt: String {
         switch self {
@@ -17,6 +21,10 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .serviceRecovery: return "Repair the paired HQ service?"
         case .serviceUpgrade: return "Upgrade the paired HQ service to the reviewed release?"
         case .qualification: return "Approve one reviewed harness qualification run?"
+        case .soulRunner: return "Provision the reviewed Soul runner account?"
+        case .soulBridge: return "Provision the reviewed Soul bridge account and directories?"
+        case .soulProtected: return "Install the reviewed protected Soul runtime?"
+        case .soulCooperative: return "Install the reviewed cooperative Soul launch?"
         }
     }
 
@@ -29,6 +37,8 @@ enum PairedHarnessPurpose: String, CaseIterable {
         case .serviceUpgrade: return try reviewHQServiceUpgrade(source, planID: planID, digest: digest)
         case .qualification:
             return try reviewHarnessQualification(Data(source.utf8), planID: planID, digest: digest, mode: .approval)
+        case .soulRunner, .soulBridge, .soulProtected, .soulCooperative:
+            return try reviewSoulPlan(source, planID: planID, digest: digest, purpose: self)
         }
     }
 }

@@ -1,0 +1,1 @@
+- The native macOS owner helper reviews separate Machine-signed Soul runner, bridge, protected install, and cooperative install plans before issuing purpose-bound proofs (#1315).
