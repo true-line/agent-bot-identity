@@ -11,6 +11,47 @@ struct HarnessExportTests {
         let ownerPin = owner.publicKey.x963Representation.base64EncodedString()
         let now = Int64(Date().timeIntervalSince1970)
         let planID = "plan-20261120T122100Z-dcef"
+        func soulFixture(_ purpose: PairedHarnessPurpose) throws -> String {
+            let installation = "stage2a-fixture"
+            let kind = purpose == .soulRunner ? "runner" : "bridge"
+            let domain = kind == "runner" ? installation : "agent-bot-soul-bridge/v1\0" + installation
+            let suffix = SHA256.hash(data: Data(domain.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
+            let runnerSuffix = SHA256.hash(data: Data(installation.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
+            let account = (kind == "runner" ? "_abm-sr-" : "_abm-br-") + suffix
+            let payload = purpose == .soulRunner ? "soul_runners" : purpose == .soulBridge ? "soul_bridges" :
+                purpose == .soulProtected ? "soul_protected_launch" : "soul_cooperative_launch"
+            let runner = "_abm-sr-" + runnerSuffix
+            let bridgeDomain = "agent-bot-soul-bridge/v1\0" + installation
+            let bridgeSuffix = SHA256.hash(data: Data(bridgeDomain.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
+            let bridge = "_abm-br-" + bridgeSuffix
+            let members = purpose == .soulRunner || purpose == .soulBridge ? [account] :
+                purpose == .soulProtected ? [bridge, runner].sorted() : [runner]
+            let hq = #"{"kind":"hq-account","target":"_agent-bot-hq","action":"none","group":"_agent-bot-hq","mode":"0700","detail":"exists; dedicated; home /var/agent-bot-hq; its password is checked at apply","uid":309,"gid":309}"#
+            let role = try object([("kind", quote("account")), ("target", quote(account)), ("action", quote("create")),
+                                   ("group", quote(account)), ("mode", quote("0700")),
+                                   ("detail", quote("Soul \(kind) home /var/agent-bot-soul-\(kind)-\(account), shell /usr/bin/false, private group, no password, no other groups")),
+                                   ("uid", "310"), ("gid", "310")])
+            let isAccount = purpose == .soulRunner || purpose == .soulBridge
+            var steps = isAccount ? [hq, role] : [try object([("kind", quote(purpose == .soulProtected ? "soul-protected-launch" : "soul-cooperative-launch")),
+                ("target", quote(installation)), ("action", quote("write")), ("detail", quote("private install fixture"))])]
+            if purpose == .soulBridge {
+                let base = "/Library/Application Support/ai.true-line.agent-bot-hq"
+                for index in 0..<8 {
+                    steps.append(try object([("kind", quote("directory")),
+                        ("target", quote(base + "/ipc/fixture-\(index)")), ("action", quote("create")),
+                        ("owner", quote("root")), ("group", quote("wheel")), ("mode", quote("0755"))]))
+                }
+            }
+            let value = isAccount ? try array([object([("soul_id", quote("agent_00000000-0000-0000-0000-000000000001")),
+                ("installation_id", quote(installation)), ("account", quote(account))])]) :
+                purpose == .soulProtected ? try object([("policy", object([("binding", object([("installation_id", quote(installation))])),
+                    ("runner", object([("account", quote(runner))])), ("bridge", object([("account", quote(bridge))]))]))]) :
+                try object([("purpose", quote(purpose.rawValue)), ("profile_in_force", quote("managed-cooperative")),
+                    ("runner", object([("installation_id", quote(installation)), ("account", quote(runner))]))])
+            return try object([("version", "3"), ("hq_account", quote("_agent-bot-hq")), ("dir", quote("none")),
+                ("members", array(members.map(quote))), ("steps", array(steps)), ("purpose", quote(purpose.rawValue)),
+                (payload, value)]) + "\n"
+        }
         func checkService(_ src: String) throws -> String {
             let digest = SHA256.hash(data: Data(src.utf8)).map { String(format: "%02x", $0) }.joined()
             return try reviewHQServiceRecovery(src, planID: planID, digest: digest)
@@ -56,7 +97,9 @@ struct HarnessExportTests {
         for action in PairedHarnessPurpose.allCases {
             let name = action.rawValue
             let file = action == .provision ? "harness-account-provision-accounts-and-broker" : name
-            let fixtureCanonical = try String(contentsOf: fixtures.appendingPathComponent(file + ".json"), encoding: .utf8)
+            let fixtureCanonical = [.soulRunner, .soulBridge, .soulProtected, .soulCooperative].contains(action)
+                ? try soulFixture(action)
+                : try String(contentsOf: fixtures.appendingPathComponent(file + ".json"), encoding: .utf8)
             let canonical = action == .qualification ? fixtureCanonical.replacingOccurrences(
                 of: "Review only: declared host identity, fixed conformance gates, pinned runner and test provider, disposable member state; no install or launch authorization.",
                 with: "Owner approval permits one qualification run with the listed runner, test provider and disposable member state. It grants no installation or ordinary HQ access."

@@ -132,6 +132,27 @@ umask 077
 
 Review each harness account, its numeric UID, private group and GID, its home and mode, and any broker directories. Check whether Machine will create an account, repair its home mode, or verify an existing role. After confirmation and fresh owner authentication, return the proof via the dedicated HQ's `machine harness-account-provision approve --challenge-file challenge.json --proof-file owner-proof.json --socket SOCKET`. The administrator separately applies the approved plan. Installing or retiring a launch rule requires a separate approval.
 
+## Review a paired Soul installation
+
+Each Soul operation has its own Machine purpose and native owner command. Use
+the command matching the exported challenge:
+
+| Machine purpose | Owner command |
+| --- | --- |
+| `soul-runner-provision` | `approve-soul-runner-provision` |
+| `soul-bridge-provision` | `approve-soul-bridge-provision` |
+| `soul-protected-launch-install` | `approve-soul-protected-launch-install` |
+| `soul-cooperative-launch-install` | `approve-soul-cooperative-launch-install` |
+
+Transfer the complete signed challenge to the enrolled owner's desktop session.
+Run the installed flat helper with that command, reading the challenge from
+standard input and writing its proof to a fresh private file. The native review
+shows the complete Machine plan JSON, including account UID and GID, paths,
+component digests, and all launch settings. Confirm only the exact displayed
+plan. Return the proof through the matching paired HQ approve command; Machine
+consumes the challenge once. The administrator separately applies the saved
+plan. Each of the four purposes needs its own approval.
+
 ## Review a stopped HQ service repair
 
 The paired HQ exports the saved plan with `machine hq-service-recovery export PLAN_ID --socket SOCKET`.
