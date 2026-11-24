@@ -17,6 +17,7 @@ enum OwnerPresenceMain {
         switch command {
         case "approve-pairing": limit = PairingChallenge.maximumBytes
         case "approve-first-hq": limit = FirstHQChallenge.maximumBytes
+        case "approve-tart-guest": limit = GuestOwnerPermit.maximumBytes
         case "approve-harness-launch-install", "approve-harness-launch-retire", "approve-harness-account-provision", "approve-hq-service-recovery", "approve-hq-service-upgrade", "approve-harness-qualification-run", "approve-soul-runner-provision", "approve-soul-bridge-provision", "approve-soul-protected-launch-install", "approve-soul-cooperative-launch-install": limit = HarnessLaunchChallenge.maximumBytes
         default: throw PresenceFailure.invalidChallenge
         }
@@ -26,6 +27,7 @@ enum OwnerPresenceMain {
             switch command {
             case "approve-pairing": return .pairing(try PairingChallenge.parse(bytes, now: now))
             case "approve-first-hq": return .firstHQ(try FirstHQChallenge.parse(bytes, now: now))
+            case "approve-tart-guest": return .guestHarness(try GuestOwnerPermit.parse(bytes, now: now))
             case "approve-harness-launch-install": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .install, now: now))
             case "approve-harness-launch-retire": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .retire, now: now))
             case "approve-hq-service-recovery": return .harnessLaunch(try HarnessLaunchChallenge.parse(bytes, action: .serviceRecovery, now: now))
@@ -91,9 +93,13 @@ enum OwnerPresenceMain {
         default: request = try readRequest(args[0])
         }
         let verify = { try OwnerExecutable.verify() }
-        if case .harnessLaunch(let challenge) = request {
-            try verify()
-            try HarnessMachinePin.verify(challenge.machine_key)
+        if let request {
+            switch request {
+            case .harnessLaunch, .guestHarness:
+                try verify()
+                try request.verifyMachinePin()
+            default: break
+            }
         }
         let store = try FreshOwnerStore.open(verifyExecutable: verify)
         let result: [String: String]

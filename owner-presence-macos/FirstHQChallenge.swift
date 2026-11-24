@@ -6,12 +6,14 @@ enum OwnerRequest {
     case pairing(PairingChallenge)
     case firstHQ(FirstHQChallenge)
     case harnessLaunch(HarnessLaunchChallenge)
+    case guestHarness(GuestHarnessReview)
 
     var signedBytes: Data {
         switch self {
         case .pairing(let challenge): return challenge.signedBytes
         case .firstHQ(let challenge): return challenge.signedBytes
         case .harnessLaunch(let challenge): return challenge.signedBytes
+        case .guestHarness(let review): return review.challenge.signedBytes
         }
     }
 
@@ -22,6 +24,11 @@ enum OwnerRequest {
         case .harnessLaunch(let c):
             let operation = PairedHarnessPurpose(rawValue: c.action)?.confirmationPrompt ?? "Review the signed harness plan?"
             return "\(operation)\nMachine SHA-256: \(machineFingerprint(c.machine_key))\nPlan: \(c.plan_id)\nPlan SHA-256: \(c.plan_digest)"
+        case .guestHarness(let review):
+            let c = review.challenge
+            let p = review.permit
+            let operation = PairedHarnessPurpose(rawValue: c.action)?.confirmationPrompt ?? "Review the guest plan?"
+            return "\(operation)\nPhysical Machine SHA-256: \(machineFingerprint(p.host_machine_key))\nGuest Machine SHA-256: \(machineFingerprint(c.machine_key))\nVM: \(p.guest_vm_name)\nPlan: \(c.plan_id)\nPlan SHA-256: \(c.plan_digest)"
         }
     }
 
@@ -30,6 +37,15 @@ enum OwnerRequest {
         case .pairing(let challenge): try challenge.checkExpiry(now: now)
         case .firstHQ(let challenge): try challenge.checkExpiry(now: now)
         case .harnessLaunch(let challenge): try challenge.checkExpiry(now: now)
+        case .guestHarness(let review): try review.checkExpiry(now: now)
+        }
+    }
+
+    func verifyMachinePin() throws {
+        switch self {
+        case .harnessLaunch(let challenge): try HarnessMachinePin.verify(challenge.machine_key)
+        case .guestHarness(let review): try HarnessMachinePin.verify(review.permit.host_machine_key)
+        default: break
         }
     }
 }
