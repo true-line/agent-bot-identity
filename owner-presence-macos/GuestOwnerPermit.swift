@@ -62,7 +62,7 @@ struct GuestOwnerPermit: Decodable {
         guard permit.version == 1,
               let purpose = PairedHarnessPurpose(rawValue: permit.action),
               [.install, .retire, .provision, .qualification, .soulRunner, .soulBridge,
-               .soulProtected, .soulCooperative].contains(purpose),
+               .soulProtected, .soulProtectedRetire, .soulCooperative].contains(purpose),
               [permit.host_machine_key, permit.guest_machine_key, permit.tart_wrapper_sha256,
                permit.tart_app_sha256, permit.hq_key, permit.plan_digest, permit.challenge_sha256,
                permit.challenge_nonce, permit.permit_nonce].allSatisfy({

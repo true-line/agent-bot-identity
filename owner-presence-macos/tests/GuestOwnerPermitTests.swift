@@ -76,6 +76,42 @@ struct GuestOwnerPermitTests {
                                                      with: String(repeating: "A", count: responseSignature.count))
         precondition((try? GuestOwnerPermit.parse(envelope(permit, frame: forgedFrame),
                                                   now: 1000, verifyHost: verifyHost)) == nil)
+        let runner = "_abm-sr-bbbbbbbbbbbbbbbbbbbb"
+        let bridge = "_abm-br-aaaaaaaaaaaaaaaaaaaa"
+        let retirement: [String: Any] = [
+            "version": 3, "hq_account": "_agent-bot-hq", "dir": "none",
+            "members": [bridge, runner], "purpose": "soul-protected-launch-retire",
+            "steps": [[
+                "kind": "soul-protected-launch", "target": "inst_fixture",
+                "action": "remove",
+                "detail": "disable exact per-Soul authority and sudo rule after both role UIDs are idle; retain claims, snapshots and receipts"
+            ]],
+            "soul_protected_retire": [
+                "schema": "agent-bot-machine/soul-protected-launch-retire/v1",
+                "installed_plan_id": "plan-20260101T000000Z-abcd",
+                "installed_plan_digest": String(repeating: "a", count: 64),
+                "installed_plan": [
+                    "purpose": "soul-protected-launch-install",
+                    "soul_protected_launch": ["policy": [
+                        "binding": ["installation_id": "inst_fixture"],
+                        "runner": ["account": runner], "bridge": ["account": bridge]
+                    ]]
+                ]
+            ]
+        ]
+        let retireBytes = try JSONSerialization.data(withJSONObject: retirement, options: [.sortedKeys])
+        let retireSource = String(decoding: retireBytes, as: UTF8.self) + "\n"
+        let retireDigest = SHA256.hash(data: Data(retireSource.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        let retireReview = try PairedHarnessPurpose.soulProtectedRetire.review(
+            retireSource, planID: planID, digest: retireDigest)
+        precondition(retireReview.contains("retain claims, snapshots and receipts"))
+        let unsafeRetire = retireSource.replacingOccurrences(of: "retain claims, snapshots and receipts",
+                                                              with: "delete all claims")
+        let unsafeDigest = SHA256.hash(data: Data(unsafeRetire.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        precondition((try? PairedHarnessPurpose.soulProtectedRetire.review(
+            unsafeRetire, planID: planID, digest: unsafeDigest)) == nil)
         print("Verified guest permit host pin, signatures, plan binding, review text and expiry.")
     }
 }
