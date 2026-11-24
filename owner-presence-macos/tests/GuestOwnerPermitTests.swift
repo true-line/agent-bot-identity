@@ -112,6 +112,40 @@ struct GuestOwnerPermitTests {
             .map { String(format: "%02x", $0) }.joined()
         precondition((try? PairedHarnessPurpose.soulProtectedRetire.review(
             unsafeRetire, planID: planID, digest: unsafeDigest)) == nil)
+        precondition(GuestOwnerPermit.permits(.serviceUpgrade))
+        precondition(!GuestOwnerPermit.permits(.serviceRecovery))
+        let upgradePlan = try String(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2]), encoding: .utf8)
+        let upgradeDigest = SHA256.hash(data: Data(upgradePlan.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        var upgradeBody = body
+        upgradeBody["action"] = "hq-service-upgrade"
+        upgradeBody["plan_canonical"] = upgradePlan
+        upgradeBody["plan_digest"] = upgradeDigest
+        let upgradeBodyData = try JSONSerialization.data(withJSONObject: upgradeBody,
+                                                          options: [.sortedKeys, .withoutEscapingSlashes])
+        let upgradeBodyString = String(decoding: upgradeBodyData, as: UTF8.self)
+        let upgradeResponseSigned = ["true", "", "", "challenged", upgradeBodyString, "1000",
+                                     "response-nonce", "request-nonce"].joined(separator: "\n")
+        let upgradeResponseSignature = try guest.signature(for: Data(upgradeResponseSigned.utf8))
+            .base64EncodedString()
+        let upgradeFrame = #"{"ok":true,"state":"challenged","body":\#(upgradeBodyString),"timestamp":1000,"nonce":"response-nonce","request_nonce":"request-nonce","signature":"\#(upgradeResponseSignature)"}"#
+        let upgradeFrameDigest = SHA256.hash(data: Data(upgradeFrame.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        var upgradePermit = permit
+        upgradePermit["action"] = "hq-service-upgrade"
+        upgradePermit["plan_digest"] = upgradeDigest
+        upgradePermit["challenge_sha256"] = upgradeFrameDigest
+        let upgradePermitSigned = ["agent-bot-machine-owner/guest-permit/v1", "1", hostHex, guestHex,
+                                   "synthetic-guest", "02:00:00:00:00:01", "25G83",
+                                   String(repeating: "1", count: 64), String(repeating: "2", count: 64),
+                                   "hq-service-upgrade", hq, ownerKey, planID, upgradeDigest,
+                                   upgradeFrameDigest, nonce, "1000", "1090",
+                                   String(repeating: "3", count: 64), ""].joined(separator: "\n")
+        upgradePermit["signature"] = try host.signature(for: Data(upgradePermitSigned.utf8))
+            .base64EncodedString()
+        let upgradeReview = try GuestOwnerPermit.parse(envelope(upgradePermit, frame: upgradeFrame),
+                                                       now: 1000, verifyHost: verifyHost)
+        precondition(upgradeReview.challenge.action == "hq-service-upgrade")
         print("Verified guest permit host pin, signatures, plan binding, review text and expiry.")
     }
 }

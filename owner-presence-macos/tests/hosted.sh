@@ -19,7 +19,7 @@ target="$(/usr/bin/uname -m)-apple-macosx15.0"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library \
     "$src/PairingChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/SoulPlanReview.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" \
     "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/GuestOwnerPermit.swift" "$src/tests/GuestOwnerPermitTests.swift" -o "$dir/guest-permit-tests"
-"$dir/guest-permit-tests" "$src/../tests/fixtures/harness-account-provision-accounts.json"
+"$dir/guest-permit-tests" "$src/../tests/fixtures/harness-account-provision-accounts.json" "$src/../tests/fixtures/hq-service-upgrade.json"
 /usr/bin/xcrun --sdk macosx clang -target "$target" -Wno-deprecated-declarations -c "$src/TrustedApplication.c" -o "$dir/trusted.o"
 /usr/bin/xcrun --sdk macosx swiftc -target "$target" -swift-version 5 -parse-as-library -D FRESH_OWNER_STORE_TESTS \
     "$src/PairingChallenge.swift" "$src/FirstHQChallenge.swift" "$src/HarnessLaunchPlan.swift" "$src/HarnessAccountPlan.swift" "$src/HQServiceRecoveryPlan.swift" "$src/SoulPlanReview.swift" "$src/HarnessQualificationPlan.swift" "$src/HarnessLaunchChallenge.swift" "$src/HarnessMachinePin.swift" "$src/HarnessNativeReview.swift" "$src/GuestOwnerPermit.swift" "$src/OwnerKey.swift" \

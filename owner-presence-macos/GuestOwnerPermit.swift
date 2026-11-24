@@ -20,6 +20,12 @@ struct GuestOwnerPermit: Decodable {
     ]
     static let maximumBytes = HarnessLaunchChallenge.maximumBytes + 4096
 
+    static func permits(_ purpose: PairedHarnessPurpose) -> Bool {
+        [.serviceUpgrade, .install, .retire, .provision, .qualification,
+         .soulRunner, .soulBridge, .soulProtected, .soulProtectedRetire,
+         .soulCooperative].contains(purpose)
+    }
+
     private static func exactScalarObject(_ data: Data) throws {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == fields else { throw PresenceFailure.invalidChallenge }
@@ -61,8 +67,7 @@ struct GuestOwnerPermit: Decodable {
         let permit = try JSONDecoder().decode(Self.self, from: permitLine)
         guard permit.version == 1,
               let purpose = PairedHarnessPurpose(rawValue: permit.action),
-              [.install, .retire, .provision, .qualification, .soulRunner, .soulBridge,
-               .soulProtected, .soulProtectedRetire, .soulCooperative].contains(purpose),
+              permits(purpose),
               [permit.host_machine_key, permit.guest_machine_key, permit.tart_wrapper_sha256,
                permit.tart_app_sha256, permit.hq_key, permit.plan_digest, permit.challenge_sha256,
                permit.challenge_nonce, permit.permit_nonce].allSatisfy({
